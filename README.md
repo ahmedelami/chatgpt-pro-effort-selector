@@ -1,19 +1,4 @@
-# ChatGPT Pro Effort Selector
-
-A dependency-free Manifest V3 Chrome extension that exposes a compact **Standard / Extended** selector beside ChatGPT's composer model control only when the currently visible model is exactly **Pro** or **GPT-5.6 Pro**.
-
-For each canonical saved conversation, the selector controls a persistent per-chat mode. While that chat is Extended, every captured normal composer submission freshly uses the existing short-lived one-shot debugger gate. Sending, failing, timing out, warning, or verifying an individual request does not consume or reset the chat mode.
-
-The extension does not replace, suppress, or modify ChatGPT's own model menu. Its submission coverage is limited to the normal composer send button, Enter, and form-submit paths handled by the content script. It does not claim to cover regenerate, retry, branch, or other non-composer controls.
-
-The selector mounts beside the model-control branch in the nearest horizontal composer-control layout rather than inserting inside the model control's internal vertical wrapper. Its popover is a viewport-aware, compact native-style picker containing only two rows: **Standard** and **Extended**.
-
-> [!WARNING]
-> This is an unofficial extension that depends on unsupported ChatGPT internals and requests Chrome's powerful `debugger` permission. Review the source before installing it. ChatGPT or Chrome changes can break it without notice.
-
-## Install with an AI agent
-
-**For users:** Give this prompt to Codex, Claude, or another AI agent with Computer Use access to download and apply the extension.
+# Copy and paste this prompt to your AI agent
 
 ```text
 Download or safely update the ChatGPT Pro Effort Selector from:
@@ -39,6 +24,19 @@ Work autonomously until it is installed and visibly verified in Google Chrome.
 9. Do not send a ChatGPT message unless I explicitly ask for a live request test. If I do request one, keep DevTools and every other debugger-based browser tool detached during the Extended send because the extension needs exclusive temporary debugger access.
 10. Report the clone path, extension version, validation result, and visible Chrome verification. Leave ChatGPT open and leave the current test chat in Standard mode.
 ```
+
+# ChatGPT Pro Effort Selector
+
+A dependency-free Manifest V3 Chrome extension that exposes a compact **Standard / Extended** selector beside ChatGPT's composer model control only when the currently visible model is exactly **Pro** or **GPT-5.6 Pro**.
+
+For each canonical saved conversation, the selector controls a persistent per-chat mode. While that chat is Extended, every captured normal composer submission freshly uses the existing short-lived one-shot debugger gate. Sending, failing, timing out, warning, or verifying an individual request does not consume or reset the chat mode.
+
+The extension does not replace, suppress, or modify ChatGPT's own model menu. Its submission coverage is limited to the normal composer send button, Enter, and form-submit paths handled by the content script. It does not claim to cover regenerate, retry, branch, or other non-composer controls.
+
+The selector mounts beside the model-control branch in the nearest horizontal composer-control layout rather than inserting inside the model control's internal vertical wrapper. Its popover is a viewport-aware, compact native-style picker containing only two rows: **Standard** and **Extended**.
+
+> [!WARNING]
+> This is an unofficial extension that depends on unsupported ChatGPT internals and requests Chrome's powerful `debugger` permission. Review the source before installing it. ChatGPT or Chrome changes can break it without notice.
 
 ## Directory
 
