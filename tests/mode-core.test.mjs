@@ -7,8 +7,12 @@ const {
   STANDARD,
   EXTENDED,
   MODE_STORAGE_PREFIX,
+  DRAFT_SESSION_STORAGE_KEY,
   normalizeMode,
   storageKeyForConversationId,
+  readDraftModeFromSessionStorage,
+  persistDraftModeToSessionStorage,
+  clearDraftModeFromSessionStorage,
   parseChatRoute,
   sameChatRoute,
   readModeForRoute,
@@ -24,6 +28,28 @@ const CHAT_B =
   "22222222-2222-4222-8222-222222222222";
 const CHAT_WITH_HEX =
   "abcdefab-cdef-4abc-8def-abcdefabcdef";
+
+function createMemoryStorage(
+  initialValues = {}
+) {
+  const values = new Map(
+    Object.entries(initialValues)
+  );
+
+  return {
+    getItem(key) {
+      return values.has(key)
+        ? values.get(key)
+        : null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    }
+  };
+}
 
 test("parses only canonical lowercase saved-conversation URLs", () => {
   const route = parseChatRoute(
@@ -119,6 +145,51 @@ test("gives each saved conversation an independent storage key and mode", () => 
   );
 });
 
+test("preserves all four saved-chat mode transitions across reload", () => {
+  const route = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  for (const previousMode of [
+    STANDARD,
+    EXTENDED
+  ]) {
+    for (const selectedMode of [
+      STANDARD,
+      EXTENDED
+    ]) {
+      const storedValues = {
+        [route.storageKey]:
+          previousMode
+      };
+
+      assert.equal(
+        readModeForRoute(
+          storedValues,
+          route
+        ),
+        previousMode
+      );
+
+      storedValues[route.storageKey] =
+        selectedMode;
+
+      assert.equal(
+        readModeForRoute(
+          {
+            ...storedValues
+          },
+          parseChatRoute(
+            `https://chatgpt.com/c/${CHAT_A}`
+          )
+        ),
+        selectedMode,
+        `${previousMode} -> ${selectedMode} should survive reload`
+      );
+    }
+  }
+});
+
 test("missing and corrupt stored values default to Standard", () => {
   const route = parseChatRoute(
     `https://chatgpt.com/c/${CHAT_A}`
@@ -203,7 +274,7 @@ test("legacy global preference is not a per-chat fallback", () => {
   );
 });
 
-test("keeps UUID-less draft mode document-local", () => {
+test("keeps UUID-less draft routes in one tab-scoped mode", () => {
   const rootDraft = parseChatRoute(
     "https://chatgpt.com/"
   );
@@ -235,6 +306,150 @@ test("keeps UUID-less draft mode document-local", () => {
       {},
       rootDraft,
       "corrupt"
+    ),
+    STANDARD
+  );
+});
+
+test("persists every Standard and Extended blank-draft transition across a same-tab reload", () => {
+  for (const initialMode of [
+    STANDARD,
+    EXTENDED
+  ]) {
+    for (const selectedMode of [
+      STANDARD,
+      EXTENDED
+    ]) {
+      const storage =
+        createMemoryStorage();
+
+      persistDraftModeToSessionStorage(
+        storage,
+        initialMode
+      );
+
+      assert.equal(
+        readDraftModeFromSessionStorage(
+          storage
+        ),
+        initialMode,
+        `${initialMode} should survive its first reconstruction`
+      );
+
+      persistDraftModeToSessionStorage(
+        storage,
+        selectedMode
+      );
+
+      assert.equal(
+        readDraftModeFromSessionStorage(
+          storage
+        ),
+        selectedMode,
+        `${initialMode} -> ${selectedMode} should survive reload`
+      );
+    }
+  }
+});
+
+test("blank-draft session state is isolated, normalized, and clearable", () => {
+  const firstTab = createMemoryStorage();
+  const secondTab = createMemoryStorage();
+
+  assert.equal(
+    readDraftModeFromSessionStorage(
+      firstTab
+    ),
+    STANDARD
+  );
+
+  assert.equal(
+    persistDraftModeToSessionStorage(
+      firstTab,
+      EXTENDED
+    ),
+    EXTENDED
+  );
+  assert.equal(
+    firstTab.getItem(
+      DRAFT_SESSION_STORAGE_KEY
+    ),
+    EXTENDED
+  );
+  assert.equal(
+    readDraftModeFromSessionStorage(
+      firstTab
+    ),
+    EXTENDED
+  );
+  assert.equal(
+    readDraftModeFromSessionStorage(
+      secondTab
+    ),
+    STANDARD
+  );
+
+  assert.equal(
+    clearDraftModeFromSessionStorage(
+      firstTab
+    ),
+    STANDARD
+  );
+  assert.equal(
+    readDraftModeFromSessionStorage(
+      firstTab
+    ),
+    STANDARD
+  );
+
+  persistDraftModeToSessionStorage(
+    firstTab,
+    "corrupt"
+  );
+  assert.equal(
+    readDraftModeFromSessionStorage(
+      firstTab
+    ),
+    STANDARD
+  );
+});
+
+test("blocked blank-draft session storage fails safely without changing mode normalization", () => {
+  const blockedStorage = {
+    getItem() {
+      throw new Error("blocked");
+    },
+    setItem() {
+      throw new Error("blocked");
+    },
+    removeItem() {
+      throw new Error("blocked");
+    }
+  };
+
+  assert.equal(
+    readDraftModeFromSessionStorage(
+      blockedStorage
+    ),
+    STANDARD
+  );
+  assert.equal(
+    persistDraftModeToSessionStorage(
+      blockedStorage,
+      EXTENDED
+    ),
+    EXTENDED
+  );
+  assert.equal(
+    persistDraftModeToSessionStorage(
+      blockedStorage,
+      "corrupt"
+    ),
+    STANDARD
+  );
+  assert.equal(
+    clearDraftModeFromSessionStorage(
+      blockedStorage
     ),
     STANDARD
   );
@@ -354,6 +569,57 @@ test("adopts an Extended draft only for its active successful first send", () =>
     }),
     false
   );
+});
+
+test("a Standard first send can adopt a later Extended selection at the new-chat route boundary", () => {
+  const draft = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const createdChat = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  assert.equal(
+    isDraftAdoptionTarget({
+      fromRoute: draft,
+      toRoute: createdChat,
+      draftMode: STANDARD,
+      activeDraftSend: true
+    }),
+    false
+  );
+
+  assert.equal(
+    shouldAdoptDraftMode({
+      fromRoute: draft,
+      toRoute: createdChat,
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      sendSucceeded: true
+    }),
+    true
+  );
+
+  for (const disqualifier of [
+    {
+      targetWasPreexisting: true
+    },
+    {
+      navigationDisqualified: true
+    }
+  ]) {
+    assert.equal(
+      shouldAdoptDraftMode({
+        fromRoute: draft,
+        toRoute: createdChat,
+        draftMode: EXTENDED,
+        activeDraftSend: true,
+        sendSucceeded: true,
+        ...disqualifier
+      }),
+      false
+    );
+  }
 });
 
 test("does not adopt a draft mode into another draft or an invalid saved-route shape", () => {

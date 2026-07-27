@@ -106,20 +106,22 @@ That legacy key is retired on startup and is never consulted as a fallback. In p
 
 ### Blank new-chat draft
 
-A blank new chat has no canonical conversation UUID, so its mode is document-local:
+A blank new chat has no canonical conversation UUID, so its mode is kept in that tab's `sessionStorage` until the draft becomes a saved conversation:
 
 - it defaults to Standard
+- selecting either option survives reloads in the same tab
 - selecting Extended applies to its first captured normal Pro composer submission
 - once that send is known to have succeeded and ChatGPT creates a canonical `/c/<lowercase UUID>` route, Extended is written once to that new conversation's independent key
+- a pass-through Standard first send is tracked across the draft-to-saved route boundary, so selecting Extended before ChatGPT finishes assigning the new URL still binds Extended to the created conversation
 - merely navigating from a blank draft to an existing saved conversation does not copy the draft mode
 - a later blank new chat defaults to Standard
-- an unsent blank-chat draft selection does not survive a reload, extension reload, browser restart, or replacement of that document
+- a fresh tab has its own Standard draft default, and closing the original tab clears its unsent draft mode with the browser session
 
 ## Per-chat Extended mode and per-send one-shot gate
 
 Extended applies to a captured composer submission only when:
 
-1. the current canonical conversation's stored mode, or the current document-local blank-chat draft mode, is Extended; and
+1. the current canonical conversation's stored mode, or the current tab-session blank-chat draft mode, is Extended; and
 2. the extension can identify the exact visible composer model as `Pro` or `GPT-5.6 Pro`.
 
 The selector is not shown for GPT-5.6 Sol, and a fresh Sol request is never rewritten to Pro.
@@ -358,6 +360,8 @@ Used for:
 - deterministic retirement of the obsolete global `effortPreference` key
 - ephemeral redacted one-shot state in `chrome.storage.session`
 
+The unsaved blank-chat mode uses the page's same-origin `sessionStorage`, not the extension `storage` permission. It stores only the scalar string `standard` or `extended`; it never stores prompt or response content.
+
 ### `debugger`
 
 Required for CDP Fetch interception of the single fresh Extended request.
@@ -425,6 +429,8 @@ npm run validate
 `npm install` is not required.
 
 ## Manual QA checklist
+
+Use a unique marker in every test prompt. When checking backend metadata, keep DevTools, Protocol Monitor, and other debugger-based browser tooling detached until the response is complete and Chrome's Extended debugger indication is gone. Detach the inspector again before every later Extended send.
 
 ### Exact Pro visibility
 
@@ -517,37 +523,48 @@ npm run validate
 7. Submit normally in B and confirm no debugger attachment occurs.
 8. Navigate back to A.
 9. Confirm A remains Extended.
-10. Select Standard in A.
-11. Confirm B remains unchanged.
-12. Reload both conversations and confirm their independent modes persist.
+10. Reload both conversations while A is Extended and B is Standard, then confirm both modes.
+11. Select Standard in A and Extended in B.
+12. Reload both conversations again and confirm A is Standard and B is Extended.
+13. Confirm each chat's marked backend result matches its selected mode.
+
+### Saved-chat reload transition matrix
+
+Run this five-send sequence in one canonical chat, using a unique marker for every prompt:
+
+1. Start Standard, send marker 1, and confirm its backend metadata is Standard.
+2. Reload, confirm Standard, send marker 2, and confirm backend Standard. This proves Standard → Standard.
+3. Select Extended, reload, confirm Extended, send marker 3, and confirm durable backend Extended proof. This proves Standard → Extended.
+4. Reload, confirm Extended, send marker 4, and confirm durable backend Extended proof. This proves Extended → Extended.
+5. Select Standard, reload, confirm Standard, send marker 5, and confirm backend Standard. This proves Extended → Standard.
+6. Rapidly select Standard → Extended → Standard, reload, and confirm the last selection wins.
+7. Rapidly select Extended → Standard → Extended, reload, and confirm the last selection wins, then restore Standard after backend inspection is detached.
 
 ### Same-conversation tab synchronization
 
 1. Open the same canonical saved conversation in two tabs.
 2. Select Extended in the first tab.
 3. Confirm the second tab changes to Extended.
-4. Submit from each tab separately and confirm each send uses its own tab-bound one-shot generation.
+4. Reload the second tab, confirm Extended, then submit and verify backend Extended.
 5. Select Standard in the second tab.
 6. Confirm the first tab changes to Standard.
-7. Change a different conversation in a third tab.
-8. Confirm the first two tabs ignore that unrelated storage change.
+7. Reload the first tab, confirm Standard, then submit and verify backend Standard.
+8. Change a different conversation in a third tab.
+9. Confirm the first two tabs ignore that unrelated storage change.
 
 ### Blank new-chat adoption
 
-1. Open a fresh blank new chat with no canonical `/c/<UUID>` path.
-2. Confirm it defaults to Standard.
-3. Select Extended.
-4. Submit one prompt through the normal send button, Enter, or form-submit composer path.
-5. Confirm that first request uses the Extended one-shot gate.
-6. Wait for ChatGPT to create a canonical `/c/<lowercase UUID>` route and for the send to report success.
-7. Confirm the created conversation remains Extended for a second normal composer submission.
-8. Open a later blank new chat.
-9. Confirm the later blank chat defaults to Standard.
-10. Select Extended in a blank draft but do not submit.
-11. Navigate directly to an existing saved Standard conversation.
-12. Confirm the existing conversation remains Standard and does not adopt the draft mode.
-13. Reload an unsent blank Extended draft.
-14. Confirm it returns to Standard.
+1. Open a fresh blank new chat with no canonical `/c/<UUID>` path and confirm Standard.
+2. Reload, confirm Standard, send a unique marker, wait for the canonical route, confirm backend Standard, reload, and confirm the saved chat remains Standard.
+3. Open a later blank new chat and confirm it defaults to Standard.
+4. Select Extended but do not send, reload, and confirm the same blank draft remains Extended.
+5. Send a unique marker, wait for success and the canonical route, confirm durable backend Extended proof, reload, and confirm the saved chat remains Extended.
+6. Open a later blank new chat and confirm it defaults to Standard.
+7. Select Extended in a blank draft without sending, navigate directly to an existing saved Standard conversation, and confirm the existing conversation remains Standard.
+8. Open another blank new chat in that same tab and confirm it starts Standard rather than resurrecting the abandoned draft selection.
+9. Open a separate fresh ChatGPT tab and confirm its blank draft starts Standard.
+10. In a controlled harness, or manually when the timing is reproducible, submit a Standard first message and select Extended before ChatGPT assigns the canonical route.
+11. Confirm that first marked request remained backend Standard, reload and confirm the created chat is Extended, then send a second marker and confirm backend Extended.
 
 ### Legacy migration
 

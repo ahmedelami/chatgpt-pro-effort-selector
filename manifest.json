@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Pro Effort Selector",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "description": "Adds a persistent per-chat Standard / Extended mode for ChatGPT's visible Pro model, with a fresh one-shot gate for each Extended composer submission.",
   "minimum_chrome_version": "120",
   "permissions": [

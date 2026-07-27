@@ -8,6 +8,8 @@
     "https://chatgpt.com";
   const MODE_STORAGE_PREFIX =
     "proEffortMode.chat.";
+  const DRAFT_SESSION_STORAGE_KEY =
+    "proEffortMode.draft";
 
   const CONVERSATION_PATH_RE =
     /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
@@ -28,6 +30,52 @@
     conversationId
   ) {
     return `${MODE_STORAGE_PREFIX}${conversationId}`;
+  }
+
+  function readDraftModeFromSessionStorage(
+    storage
+  ) {
+    try {
+      return normalizeMode(
+        storage?.getItem(
+          DRAFT_SESSION_STORAGE_KEY
+        )
+      );
+    } catch {
+      return STANDARD;
+    }
+  }
+
+  function persistDraftModeToSessionStorage(
+    storage,
+    value
+  ) {
+    const mode = normalizeMode(value);
+
+    try {
+      storage?.setItem(
+        DRAFT_SESSION_STORAGE_KEY,
+        mode
+      );
+    } catch {
+      // The in-memory mode remains usable when session storage is blocked.
+    }
+
+    return mode;
+  }
+
+  function clearDraftModeFromSessionStorage(
+    storage
+  ) {
+    try {
+      storage?.removeItem(
+        DRAFT_SESSION_STORAGE_KEY
+      );
+    } catch {
+      // A blocked removal still resolves the active document to Standard.
+    }
+
+    return STANDARD;
   }
 
   function createDraftRoute(pathname = "") {
@@ -94,9 +142,9 @@
     }
 
     /*
-     * All noncanonical, UUID-less paths in one document share the
-     * document-local draft mode. Entering a draft from a saved chat is
-     * handled as a route transition by the content script.
+     * All noncanonical, UUID-less paths in one tab share the tab-session
+     * draft mode. Entering a draft from a saved chat is handled as a route
+     * transition by the content script.
      */
     return (
       left.kind === "draft" &&
@@ -231,8 +279,12 @@
       STANDARD,
       EXTENDED,
       MODE_STORAGE_PREFIX,
+      DRAFT_SESSION_STORAGE_KEY,
       normalizeMode,
       storageKeyForConversationId,
+      readDraftModeFromSessionStorage,
+      persistDraftModeToSessionStorage,
+      clearDraftModeFromSessionStorage,
       parseChatRoute,
       sameChatRoute,
       readModeForRoute,

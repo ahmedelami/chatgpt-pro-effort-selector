@@ -14,6 +14,9 @@
     parseChatRoute,
     sameChatRoute,
     readModeForRoute,
+    readDraftModeFromSessionStorage,
+    persistDraftModeToSessionStorage,
+    clearDraftModeFromSessionStorage,
     storageChangeAffectsRoute,
     isDraftAdoptionTarget,
     shouldAdoptDraftMode,
@@ -46,6 +49,17 @@
     '[aria-haspopup="listbox"]'
   ].join(",");
 
+  function getDraftSessionStorage() {
+    try {
+      return window.sessionStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  const draftSessionStorage =
+    getDraftSessionStorage();
+
   let preference = STANDARD;
   let modelState = "unknown";
   let modelControl = null;
@@ -57,10 +71,23 @@
   let routeLoadSerial = 0;
   let routeLoadPromise = null;
   let routeLoadTarget = null;
-  let draftPreference = STANDARD;
+  let modeRevision = 0;
+  let selectionSerial = 0;
+  let modeWriteQueue =
+    Promise.resolve();
+  let draftPreference =
+    activeRoute.kind === "draft"
+      ? readDraftModeFromSessionStorage(
+          draftSessionStorage
+        )
+      : clearDraftModeFromSessionStorage(
+          draftSessionStorage
+        );
   let draftAdoption = null;
   let navigationInvalidatedOperation =
     false;
+  let lastObservedHref =
+    window.location.href;
   const retiredGenerationIds =
     new Set();
 
@@ -172,6 +199,25 @@
         }
       );
     });
+  }
+
+  function enqueueModeWrite(
+    storageKey,
+    value
+  ) {
+    const write =
+      modeWriteQueue
+        .catch(() => {})
+        .then(() =>
+          storageSetMode(
+            storageKey,
+            value
+          )
+        );
+
+    modeWriteQueue = write;
+
+    return write;
   }
 
   function retireLegacyPreference() {
@@ -1699,6 +1745,15 @@
       return;
     }
 
+    if (
+      draftAdoption.expiryTimer !==
+        null
+    ) {
+      window.clearTimeout(
+        draftAdoption.expiryTimer
+      );
+    }
+
     draftAdoption = null;
   }
 
@@ -1726,6 +1781,125 @@
     }
 
     return storageKeys;
+  }
+
+  function persistDraftPreference(value) {
+    draftPreference =
+      persistDraftModeToSessionStorage(
+        draftSessionStorage,
+        value
+      );
+
+    return draftPreference;
+  }
+
+  function resetDraftPreference() {
+    draftPreference =
+      clearDraftModeFromSessionStorage(
+        draftSessionStorage
+      );
+  }
+
+  function beginDraftSendTracking({
+    draftMode,
+    replayStarted,
+    requiresStatusConfirmation
+  }) {
+    if (activeRoute.kind !== "draft") {
+      return null;
+    }
+
+    const now = Date.now();
+
+    if (
+      draftAdoption &&
+      sameRouteLocation(
+        draftAdoption.sourceRoute,
+        activeRoute
+      ) &&
+      !draftAdoption.adopted &&
+      !draftAdoption.navigationDisqualified &&
+      now - draftAdoption.createdAt <
+        1000
+    ) {
+      draftAdoption.draftMode =
+        normalizeMode(draftMode);
+      draftAdoption.replayStarted =
+        draftAdoption.replayStarted ||
+        replayStarted === true;
+      draftAdoption
+        .requiresStatusConfirmation =
+        draftAdoption
+          .requiresStatusConfirmation ||
+        requiresStatusConfirmation === true;
+
+      if (
+        requiresStatusConfirmation ===
+          true &&
+        draftAdoption.expiryTimer !==
+          null
+      ) {
+        window.clearTimeout(
+          draftAdoption.expiryTimer
+        );
+        draftAdoption.expiryTimer = null;
+      }
+
+      return draftAdoption;
+    }
+
+    clearDraftAdoption();
+
+    draftAdoption = {
+      sourceRoute: activeRoute,
+      targetRoute: null,
+      draftMode:
+        normalizeMode(draftMode),
+      generationId: null,
+      replayStarted:
+        replayStarted === true,
+      sendSucceeded: false,
+      requiresStatusConfirmation:
+        requiresStatusConfirmation === true,
+      binding: false,
+      adopted: false,
+      createdAt: now,
+      expiryTimer: null,
+      preexistingConversationKeys:
+        collectKnownConversationStorageKeys(),
+      navigationDisqualified: false
+    };
+
+    if (
+      requiresStatusConfirmation !==
+        true
+    ) {
+      const adoption = draftAdoption;
+
+      adoption.expiryTimer =
+        window.setTimeout(() => {
+          if (
+            draftAdoption === adoption
+          ) {
+            clearDraftAdoption();
+          }
+        }, 15000);
+    }
+
+    return draftAdoption;
+  }
+
+  function trackPassingDraftSend() {
+    return beginDraftSendTracking({
+      /*
+       * A pass-through send is Standard at capture time. If the user selects
+       * Extended before ChatGPT assigns the new canonical route, the current
+       * draft adoption record is updated by selectPreference().
+       */
+      draftMode: STANDARD,
+      replayStarted: true,
+      requiresStatusConfirmation: false
+    });
   }
 
   function markDraftAdoptionNavigation(
@@ -1784,9 +1958,13 @@
     }
 
     adoption.binding = true;
+    const expectedModeRevision =
+      modeRevision;
+    const expectedSelectionSerial =
+      selectionSerial;
 
     try {
-      await storageSetMode(
+      await enqueueModeWrite(
         adoption.targetRoute.storageKey,
         EXTENDED
       );
@@ -1800,22 +1978,30 @@
     }
 
     adoption.adopted = true;
-    draftPreference = STANDARD;
+    const adoptionStillCurrent =
+      draftAdoption === adoption;
+
+    if (adoptionStillCurrent) {
+      clearDraftAdoption();
+    }
 
     if (
+      adoptionStillCurrent &&
+      expectedModeRevision ===
+        modeRevision &&
+      expectedSelectionSerial ===
+        selectionSerial &&
       activeRoute.kind ===
         "conversation" &&
       activeRoute.storageKey ===
         adoption.targetRoute.storageKey
     ) {
+      resetDraftPreference();
       preference = EXTENDED;
+      modeRevision += 1;
       routeLoaded = true;
       renderUi();
       scheduleScan();
-    }
-
-    if (draftAdoption === adoption) {
-      draftAdoption = null;
     }
   }
 
@@ -1841,6 +2027,8 @@
     expectedRoute,
     expectedRouteEpoch
   ) {
+    const expectedModeRevision =
+      modeRevision;
     let nextPreference;
 
     try {
@@ -1852,6 +2040,8 @@
       if (
         expectedRouteEpoch ===
           routeEpoch &&
+        expectedModeRevision ===
+          modeRevision &&
         sameRouteLocation(
           activeRoute,
           expectedRoute
@@ -1865,6 +2055,8 @@
 
     if (
       expectedRouteEpoch !== routeEpoch ||
+      expectedModeRevision !==
+        modeRevision ||
       !sameRouteLocation(
         activeRoute,
         expectedRoute
@@ -1880,6 +2072,7 @@
     }
 
     preference = nextPreference;
+    modeRevision += 1;
     routeLoaded = true;
     renderUi();
     scheduleScan();
@@ -1908,6 +2101,34 @@
 
     if (routeChanged) {
       routeEpoch += 1;
+      modeRevision += 1;
+
+      const draftSendCreatedRoute =
+        draftAdoption &&
+        sameRouteLocation(
+          previousRoute,
+          draftAdoption.sourceRoute
+        ) &&
+        draftAdoption.replayStarted ===
+          true &&
+        nextRoute.kind ===
+          "conversation" &&
+        !draftAdoption
+          .preexistingConversationKeys
+          .has(nextRoute.storageKey) &&
+        draftAdoption
+          .navigationDisqualified !==
+          true;
+
+      if (
+        draftSendCreatedRoute &&
+        draftAdoption
+          .requiresStatusConfirmation !==
+          true
+      ) {
+        draftAdoption.sendSucceeded =
+          true;
+      }
 
       const adoptionTransition =
         draftAdoption &&
@@ -1973,13 +2194,18 @@
       }
 
       currentGenerationId = null;
+
+      if (draftSendCreatedRoute) {
+        resetDraftPreference();
+      }
+
       clearDraftAdoption();
 
       if (
         nextRoute.kind === "draft" &&
         previousRoute.kind !== "draft"
       ) {
-        draftPreference = STANDARD;
+        resetDraftPreference();
       }
 
       preference =
@@ -1987,10 +2213,11 @@
           ? draftPreference
           : STANDARD;
       routeLoaded = false;
-      setNeutralModeView();
+      removeInjectedUi(false);
     } else {
       activeRoute = nextRoute;
       routeLoaded = false;
+      removeInjectedUi(false);
     }
 
     let loadedPreference;
@@ -2044,6 +2271,7 @@
     }
 
     preference = loadedPreference;
+    modeRevision += 1;
     routeLoaded = true;
     setNeutralModeView();
     scheduleScan();
@@ -2114,8 +2342,18 @@
       return;
     }
 
+    const intentSerial =
+      ++selectionSerial;
+    modeRevision += 1;
+
     const routeReady =
       await synchronizeRoute();
+
+    if (
+      intentSerial !== selectionSerial
+    ) {
+      return;
+    }
 
     if (!routeReady || !routeLoaded) {
       showToast(
@@ -2131,21 +2369,40 @@
       "conversation"
     ) {
       try {
-        await storageSetMode(
+        await enqueueModeWrite(
           selectionRoute.storageKey,
           value
         );
       } catch {
-        showToast(
-          "The chat mode could not be saved. Its previous mode remains active."
-        );
+        if (
+          intentSerial ===
+            selectionSerial
+        ) {
+          showToast(
+            "The chat mode could not be saved. Its previous mode remains active."
+          );
+        }
         return;
       }
     } else {
-      draftPreference = value;
+      persistDraftPreference(value);
+
+      if (
+        draftAdoption &&
+        sameRouteLocation(
+          draftAdoption.sourceRoute,
+          selectionRoute
+        ) &&
+        !draftAdoption
+          .navigationDisqualified
+      ) {
+        draftAdoption.draftMode =
+          value;
+      }
     }
 
     if (
+      intentSerial !== selectionSerial ||
       !sameRouteLocation(
         activeRoute,
         selectionRoute
@@ -2161,6 +2418,7 @@
     }
 
     preference = value;
+    modeRevision += 1;
     currentGenerationId = null;
     setNeutralModeView();
 
@@ -2561,19 +2819,11 @@
       operationRoute.kind === "draft" &&
       preference === EXTENDED
     ) {
-      draftAdoption = {
-        sourceRoute: operationRoute,
-        targetRoute: null,
+      beginDraftSendTracking({
         draftMode: EXTENDED,
-        generationId: null,
         replayStarted: false,
-        sendSucceeded: false,
-        binding: false,
-        adopted: false,
-        preexistingConversationKeys:
-          collectKnownConversationStorageKeys(),
-        navigationDisqualified: false
-      };
+        requiresStatusConfirmation: true
+      });
     }
 
     submissionBusy = true;
@@ -2817,12 +3067,22 @@
       return;
     }
 
+    const trackedDraftAdoption =
+      trackPassingDraftSend();
+
     if (
       !replayNormalUiAction(
         descriptor,
         false
       )
     ) {
+      if (
+        draftAdoption ===
+          trackedDraftAdoption
+      ) {
+        clearDraftAdoption();
+      }
+
       showToast(
         "ChatGPT's normal submission action could not be replayed after loading this chat's mode."
       );
@@ -2866,6 +3126,7 @@
     const policy = decideSubmissionPolicy();
 
     if (policy === "pass") {
+      trackPassingDraftSend();
       return;
     }
 
@@ -3263,6 +3524,8 @@
     }
 
     const expectedRoute = activeRoute;
+    const expectedModeRevision =
+      modeRevision;
 
     let response;
 
@@ -3280,6 +3543,9 @@
       response.pagePath !==
         expectedRoute.pathname ||
       expectedRouteEpoch !== routeEpoch ||
+      expectedModeRevision !==
+        modeRevision ||
+      preference !== EXTENDED ||
       !sameRouteLocation(
         activeRoute,
         expectedRoute
@@ -3304,6 +3570,34 @@
     });
   }
 
+  function observeRouteChange() {
+    const currentHref =
+      window.location.href;
+
+    if (currentHref === lastObservedHref) {
+      return;
+    }
+
+    lastObservedHref = currentHref;
+    void synchronizeRoute();
+    scheduleScan();
+  }
+
+  function handleNavigationEntryChange(
+    event
+  ) {
+    if (
+      draftAdoption &&
+      event?.navigationType ===
+        "traverse"
+    ) {
+      draftAdoption.navigationDisqualified =
+        true;
+    }
+
+    observeRouteChange();
+  }
+
   function beginObservation() {
     if (observer) {
       return;
@@ -3321,7 +3615,7 @@
     }
 
     observer = new MutationObserver(() => {
-      void synchronizeRoute();
+      observeRouteChange();
       scheduleScan();
     });
 
@@ -3340,6 +3634,11 @@
     });
 
     scheduleScan();
+
+    window.setInterval(
+      observeRouteChange,
+      125
+    );
   }
 
   document.addEventListener(
@@ -3419,6 +3718,7 @@
       }
 
       preference = nextPreference;
+      modeRevision += 1;
 
       if (!submissionBusy) {
         setNeutralModeView();
@@ -3444,9 +3744,19 @@
           true;
       }
 
-      void synchronizeRoute();
+      observeRouteChange();
     }
   );
+
+  if (
+    typeof window.navigation
+      ?.addEventListener === "function"
+  ) {
+    window.navigation.addEventListener(
+      "currententrychange",
+      handleNavigationEntryChange
+    );
+  }
 
   void retireLegacyPreference().then(
     async () => {
