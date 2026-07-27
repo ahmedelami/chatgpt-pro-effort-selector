@@ -4,9 +4,13 @@ import assert from "node:assert/strict";
 import {
   PhaseTransitionError,
   classifyLostOperation,
+  decideActiveSessionNavigation,
   isPreSendActivePhase,
   transitionPhase
 } from "../core/state-core.mjs";
+
+const TEMPORARY_URL =
+  "https://chatgpt.com/c/WEB:11111111-1111-4111-8111-111111111111";
 
 test("models the successful one-shot lifecycle", () => {
   let phase = "idle";
@@ -133,6 +137,309 @@ test("identifies only pre-send debugger-active phases", () => {
     assert.equal(
       isPreSendActivePhase(phase),
       false
+    );
+  }
+});
+
+test("allows one authorized same-document blank-to-WEB transition", () => {
+  for (const currentPath of [
+    "/",
+    "/new"
+  ]) {
+    for (const phase of [
+      "armed",
+      "settling",
+      "processing",
+      "sent",
+      "cleaning",
+      "sent_warning"
+    ]) {
+      assert.deepEqual(
+        decideActiveSessionNavigation({
+          currentPath,
+          nextUrl: TEMPORARY_URL,
+          sameDocument: true,
+          replayAuthorized: true,
+          uiReplayStarted: true,
+          provisionalTransitionUsed:
+            false,
+          phase
+        }),
+        {
+          action: "advance",
+          pagePath:
+            "/c/WEB:11111111-1111-4111-8111-111111111111",
+          transition: "provisional"
+        }
+      );
+
+      assert.deepEqual(
+        decideActiveSessionNavigation({
+          currentPath,
+          nextUrl: TEMPORARY_URL,
+          status: "loading",
+          replayAuthorized: true,
+          uiReplayStarted: true,
+          provisionalTransitionUsed:
+            false,
+          phase
+        }),
+        {
+          action: "fail"
+        }
+      );
+    }
+  }
+
+  assert.deepEqual(
+    decideActiveSessionNavigation({
+      currentPath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111",
+      nextUrl: `${TEMPORARY_URL}?model=pro`,
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed: true,
+      phase: "settling"
+    }),
+    {
+      action: "keep",
+      pagePath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111"
+    }
+  );
+});
+
+test("allows a continued WEB send to promote once to a canonical route", () => {
+  for (const phase of [
+    "sent",
+    "cleaning",
+    "sent_warning"
+  ]) {
+    assert.deepEqual(
+      decideActiveSessionNavigation({
+        currentPath:
+          "/c/WEB:11111111-1111-4111-8111-111111111111",
+        nextUrl:
+          "https://chatgpt.com/c/22222222-2222-4222-8222-222222222222",
+        sameDocument: true,
+        replayAuthorized: true,
+        uiReplayStarted: true,
+        provisionalTransitionUsed: true,
+        canonicalTransitionUsed: false,
+        canonicalTargetPath:
+          "/c/22222222-2222-4222-8222-222222222222",
+        requestContinued: true,
+        hasSubmittedUserMessageId:
+          true,
+        phase
+      }),
+      {
+        action: "advance",
+        pagePath:
+          "/c/22222222-2222-4222-8222-222222222222",
+        transition: "canonical"
+      }
+    );
+  }
+});
+
+test("keeps full loads and unrelated active-session navigation fail-closed", () => {
+  const variants = [
+    {
+      currentPath: "/",
+      nextUrl: TEMPORARY_URL,
+      status: "loading",
+      sameDocument: false,
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "armed"
+    },
+    {
+      currentPath: "/",
+      nextUrl: "https://chatgpt.com/",
+      status: "loading",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "armed"
+    },
+    {
+      currentPath: "/",
+      nextUrl: TEMPORARY_URL,
+      replayAuthorized: false,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "armed"
+    },
+    {
+      currentPath: "/",
+      nextUrl: TEMPORARY_URL,
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        true,
+      phase: "armed"
+    },
+    {
+      currentPath: "/library",
+      nextUrl: TEMPORARY_URL,
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "armed"
+    },
+    {
+      currentPath: "/",
+      nextUrl:
+        "https://example.com/c/WEB:11111111-1111-4111-8111-111111111111",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "armed"
+    },
+    {
+      currentPath:
+        "/c/11111111-1111-4111-8111-111111111111",
+      nextUrl:
+        "https://chatgpt.com/c/22222222-2222-4222-8222-222222222222",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "settling"
+    },
+    {
+      currentPath: "/",
+      nextUrl:
+        "https://chatgpt.com/c/11111111-1111-4111-8111-111111111111",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "settling"
+    },
+    {
+      currentPath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111",
+      nextUrl:
+        "https://chatgpt.com/c/WEB:22222222-2222-4222-8222-222222222222",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed: true,
+      phase: "settling"
+    },
+    {
+      currentPath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111",
+      nextUrl:
+        "https://chatgpt.com/c/22222222-2222-4222-8222-222222222222",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed: true,
+      canonicalTransitionUsed: false,
+      requestContinued: false,
+      hasSubmittedUserMessageId:
+        true,
+      phase: "processing"
+    },
+    {
+      currentPath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111",
+      nextUrl:
+        "https://chatgpt.com/c/22222222-2222-4222-8222-222222222222",
+      sameDocument: true,
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      canonicalTransitionUsed: false,
+      canonicalTargetPath:
+        "/c/22222222-2222-4222-8222-222222222222",
+      requestContinued: true,
+      hasSubmittedUserMessageId:
+        true,
+      phase: "cleaning"
+    },
+    {
+      currentPath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111",
+      nextUrl:
+        "https://chatgpt.com/c/22222222-2222-4222-8222-222222222222",
+      sameDocument: true,
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        true,
+      canonicalTransitionUsed: false,
+      canonicalTargetPath:
+        "/c/33333333-3333-4333-8333-333333333333",
+      requestContinued: true,
+      hasSubmittedUserMessageId:
+        true,
+      phase: "cleaning"
+    },
+    {
+      currentPath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111",
+      nextUrl:
+        "https://chatgpt.com/c/22222222-2222-4222-8222-222222222222",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed: true,
+      canonicalTransitionUsed: true,
+      requestContinued: true,
+      hasSubmittedUserMessageId:
+        true,
+      phase: "cleaning"
+    },
+    {
+      currentPath:
+        "/c/WEB:11111111-1111-4111-8111-111111111111",
+      nextUrl:
+        "https://chatgpt.com/c/22222222-2222-4222-8222-222222222222",
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed: true,
+      canonicalTransitionUsed: false,
+      requestContinued: true,
+      hasSubmittedUserMessageId:
+        false,
+      phase: "cleaning"
+    },
+    {
+      currentPath: "/",
+      nextUrl: TEMPORARY_URL,
+      replayAuthorized: true,
+      uiReplayStarted: true,
+      provisionalTransitionUsed:
+        false,
+      phase: "attaching"
+    }
+  ];
+
+  variants.push({
+    currentPath: "/",
+    nextUrl: TEMPORARY_URL,
+    replayAuthorized: true,
+    uiReplayStarted: false,
+    provisionalTransitionUsed: false,
+    phase: "armed"
+  });
+
+  for (const variant of variants) {
+    assert.deepEqual(
+      decideActiveSessionNavigation(
+        variant
+      ),
+      {
+        action: "fail"
+      }
     );
   }
 });

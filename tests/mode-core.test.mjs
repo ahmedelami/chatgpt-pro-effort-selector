@@ -8,17 +8,34 @@ const {
   EXTENDED,
   MODE_STORAGE_PREFIX,
   DRAFT_SESSION_STORAGE_KEY,
+  DRAFT_BINDING_SESSION_STORAGE_KEY,
+  DRAFT_PENDING_SESSION_STORAGE_KEY,
   normalizeMode,
   storageKeyForConversationId,
   readDraftModeFromSessionStorage,
   persistDraftModeToSessionStorage,
   clearDraftModeFromSessionStorage,
+  isBlankDraftRoute,
+  isTemporaryChatRoute,
+  isProvisionalDraftTransition,
+  routeContinuesDraftLifecycle,
+  readDraftBindingFromSessionStorage,
+  persistDraftBindingToSessionStorage,
+  clearDraftBindingFromSessionStorage,
+  persistPendingDraftAdoptionToSessionStorage,
+  readPendingDraftAdoptionFromSessionStorage,
+  clearPendingDraftAdoptionFromSessionStorage,
+  shouldRestorePendingDraftAdoption,
+  conversationRouteForBinding,
+  conversationRouteForDraftLifecycle,
+  drainLatestModeWrite,
   parseChatRoute,
   sameChatRoute,
   readModeForRoute,
   storageChangeAffectsRoute,
   isDraftAdoptionTarget,
   shouldAdoptDraftMode,
+  shouldBindDraftConversation,
   decideSubmissionForMode
 } = globalThis.ProEffortModeCore;
 
@@ -28,6 +45,8 @@ const CHAT_B =
   "22222222-2222-4222-8222-222222222222";
 const CHAT_WITH_HEX =
   "abcdefab-cdef-4abc-8def-abcdefabcdef";
+const TEMP_CHAT_A =
+  `https://chatgpt.com/c/WEB:${CHAT_A}`;
 
 function createMemoryStorage(
   initialValues = {}
@@ -100,6 +119,511 @@ test("preserves the parsed pathname for noncanonical routes", () => {
       storageKey: null,
       pathname: ""
     }
+  );
+});
+
+test("recognizes only the narrow blank-to-WEB provisional lifecycle", () => {
+  const rootDraft = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const newDraft = parseChatRoute(
+    "https://chatgpt.com/new"
+  );
+  const temporary = parseChatRoute(
+    TEMP_CHAT_A
+  );
+  const otherTemporary = parseChatRoute(
+    `https://chatgpt.com/c/WEB:${CHAT_B}`
+  );
+  const saved = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  assert.equal(
+    isBlankDraftRoute(rootDraft),
+    true
+  );
+  assert.equal(
+    isBlankDraftRoute(newDraft),
+    true
+  );
+  assert.equal(
+    isTemporaryChatRoute(temporary),
+    true
+  );
+  assert.equal(
+    isTemporaryChatRoute(
+      parseChatRoute(
+        `https://chatgpt.com/c/web:${CHAT_A}`
+      )
+    ),
+    false
+  );
+  assert.equal(
+    isProvisionalDraftTransition(
+      rootDraft,
+      temporary
+    ),
+    true
+  );
+  assert.equal(
+    routeContinuesDraftLifecycle(
+      rootDraft,
+      temporary
+    ),
+    true
+  );
+  assert.equal(
+    routeContinuesDraftLifecycle(
+      temporary,
+      temporary
+    ),
+    true
+  );
+
+  for (const [fromRoute, toRoute] of [
+    [temporary, otherTemporary],
+    [temporary, saved],
+    [saved, temporary],
+    [
+      parseChatRoute(
+        "https://chatgpt.com/library"
+      ),
+      temporary
+    ]
+  ]) {
+    assert.equal(
+      isProvisionalDraftTransition(
+        fromRoute,
+        toRoute
+      ),
+      false
+    );
+  }
+});
+
+test("persists a WEB route binding to exactly one canonical conversation", () => {
+  const storage = createMemoryStorage();
+  const temporary = parseChatRoute(
+    TEMP_CHAT_A
+  );
+  const savedA = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+  const savedB = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_B}`
+  );
+
+  assert.equal(
+    readDraftBindingFromSessionStorage(
+      storage,
+      temporary
+    ),
+    null
+  );
+
+  const binding =
+    persistDraftBindingToSessionStorage(
+      storage,
+      temporary,
+      savedA
+    );
+
+  assert.deepEqual(binding, {
+    temporaryPath:
+      `/c/WEB:${CHAT_A}`,
+    conversationId: CHAT_A,
+    storageKey:
+      `${MODE_STORAGE_PREFIX}${CHAT_A}`,
+    pathname: `/c/${CHAT_A}`
+  });
+  assert.deepEqual(
+    readDraftBindingFromSessionStorage(
+      storage,
+      temporary
+    ),
+    binding
+  );
+  assert.deepEqual(
+    conversationRouteForBinding(
+      binding,
+      temporary
+    ),
+    savedA
+  );
+  assert.equal(
+    conversationRouteForBinding(
+      binding,
+      parseChatRoute(
+        `https://chatgpt.com/c/WEB:${CHAT_B}`
+      )
+    ),
+    null
+  );
+  assert.equal(
+    persistDraftBindingToSessionStorage(
+      storage,
+      temporary,
+      parseChatRoute(
+        "https://chatgpt.com/"
+      )
+    ),
+    null
+  );
+
+  const temporaryB = parseChatRoute(
+    `https://chatgpt.com/c/WEB:${CHAT_B}`
+  );
+
+  persistDraftBindingToSessionStorage(
+    storage,
+    temporaryB,
+    savedB
+  );
+
+  assert.equal(
+    readDraftBindingFromSessionStorage(
+      storage,
+      temporary
+    )?.storageKey,
+    savedA.storageKey,
+    "adding another provisional chat must preserve Back navigation to the first"
+  );
+  assert.equal(
+    readDraftBindingFromSessionStorage(
+      storage,
+      temporaryB
+    )?.storageKey,
+    savedB.storageKey
+  );
+
+  storage.setItem(
+    DRAFT_BINDING_SESSION_STORAGE_KEY,
+    JSON.stringify({
+      temporaryPath:
+        temporary.pathname,
+      conversationId:
+        savedB.conversationId
+    })
+  );
+  assert.equal(
+    conversationRouteForBinding(
+      readDraftBindingFromSessionStorage(
+        storage,
+        temporary
+      ),
+      temporary
+    )?.storageKey,
+    savedB.storageKey
+  );
+
+  assert.equal(
+    clearDraftBindingFromSessionStorage(
+      storage
+    ),
+    null
+  );
+  assert.equal(
+    storage.getItem(
+      DRAFT_BINDING_SESSION_STORAGE_KEY
+    ),
+    null
+  );
+});
+
+test("restores only a fresh generation-scoped pending draft adoption", () => {
+  const storage = createMemoryStorage();
+  const blank = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const temporary = parseChatRoute(
+    TEMP_CHAT_A
+  );
+  const savedA = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+  const savedB = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_B}`
+  );
+  const generationId =
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const createdAt = 10_000;
+
+  const record =
+    persistPendingDraftAdoptionToSessionStorage(
+      storage,
+      {
+        sourceRoute: blank,
+        temporaryRoute: temporary,
+        targetRoute: savedA,
+        generationId,
+        draftMode: EXTENDED,
+        createdAt,
+        preexistingConversationKeys: [
+          savedB.storageKey
+        ]
+      }
+    );
+
+  assert.deepEqual(record, {
+    version: 1,
+    sourcePath: "/",
+    temporaryPath:
+      `/c/WEB:${CHAT_A}`,
+    targetConversationId: CHAT_A,
+    generationId,
+    draftMode: EXTENDED,
+    createdAt,
+    preexistingConversationKeys: [
+      savedB.storageKey
+    ]
+  });
+
+  for (const route of [
+    blank,
+    temporary,
+    savedA
+  ]) {
+    assert.deepEqual(
+      readPendingDraftAdoptionFromSessionStorage(
+        storage,
+        route,
+        createdAt + 1
+      ),
+      record
+    );
+  }
+
+  assert.equal(
+    readPendingDraftAdoptionFromSessionStorage(
+      storage,
+      savedB,
+      createdAt + 1
+    ),
+    null,
+    "a pending generation must never adopt a preexisting chat"
+  );
+  assert.equal(
+    readPendingDraftAdoptionFromSessionStorage(
+      storage,
+      temporary,
+      createdAt + 120_001
+    ),
+    null,
+    "stale recovery evidence must expire"
+  );
+
+  for (const phase of [
+    "sent",
+    "warning",
+    "verified"
+  ]) {
+    assert.equal(
+      shouldRestorePendingDraftAdoption(
+        record,
+        {
+          ok: true,
+          generationId,
+          phase,
+          submittedUserMessageId:
+            "user-message"
+        }
+      ),
+      true
+    );
+  }
+
+  for (const state of [
+    {
+      ok: true,
+      generationId:
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      phase: "sent",
+      submittedUserMessageId:
+        "user-message"
+    },
+    {
+      ok: true,
+      generationId,
+      phase: "failed",
+      submittedUserMessageId:
+        "user-message"
+    },
+    {
+      ok: true,
+      generationId,
+      phase: "uncertain",
+      submittedUserMessageId:
+        "user-message"
+    },
+    {
+      ok: true,
+      generationId,
+      phase: "sent",
+      submittedUserMessageId: ""
+    }
+  ]) {
+    assert.equal(
+      shouldRestorePendingDraftAdoption(
+        record,
+        state
+      ),
+      false
+    );
+  }
+
+  storage.setItem(
+    DRAFT_PENDING_SESSION_STORAGE_KEY,
+    JSON.stringify({
+      ...record,
+      generationId: "not-a-generation"
+    })
+  );
+  assert.equal(
+    readPendingDraftAdoptionFromSessionStorage(
+      storage,
+      temporary,
+      createdAt + 1
+    ),
+    null
+  );
+
+  assert.equal(
+    clearPendingDraftAdoptionFromSessionStorage(
+      storage
+    ),
+    null
+  );
+  assert.equal(
+    storage.getItem(
+      DRAFT_PENDING_SESSION_STORAGE_KEY
+    ),
+    null
+  );
+});
+
+test("keeps a discovered draft target writable while its first binding write is pending", () => {
+  const blank = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const temporary = parseChatRoute(
+    TEMP_CHAT_A
+  );
+  const saved = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  for (const route of [
+    blank,
+    temporary
+  ]) {
+    assert.deepEqual(
+      conversationRouteForDraftLifecycle({
+        route,
+        sourceRoute: blank,
+        targetRoute: saved
+      }),
+      saved
+    );
+  }
+
+  assert.equal(
+    conversationRouteForDraftLifecycle({
+      route: temporary,
+      sourceRoute: blank,
+      targetRoute: saved,
+      navigationDisqualified: true
+    }),
+    null
+  );
+
+});
+
+test("drains a target-scoped mode write to the latest selection after route teardown", async () => {
+  for (const [
+    initialMode,
+    changedMode
+  ] of [
+    [EXTENDED, STANDARD],
+    [STANDARD, EXTENDED]
+  ]) {
+    let desiredMode = initialMode;
+    const pendingWrites = [];
+    const writtenModes = [];
+
+    const drainPromise =
+      drainLatestModeWrite(
+        () => desiredMode,
+        (mode) =>
+          new Promise((resolve) => {
+            writtenModes.push(mode);
+            pendingWrites.push(resolve);
+          })
+      );
+
+    await Promise.resolve();
+    assert.deepEqual(
+      writtenModes,
+      [initialMode]
+    );
+
+    desiredMode = changedMode;
+    pendingWrites.shift()();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(
+      writtenModes,
+      [initialMode, changedMode]
+    );
+
+    pendingWrites.shift()();
+    assert.equal(
+      await drainPromise,
+      changedMode
+    );
+  }
+});
+
+test("coalesces a selection that returns to the mode already being written", async () => {
+  let desiredMode = EXTENDED;
+  let releaseWrite;
+  const writtenModes = [];
+
+  const drainPromise =
+    drainLatestModeWrite(
+      () => desiredMode,
+      (mode) =>
+        new Promise((resolve) => {
+          writtenModes.push(mode);
+          releaseWrite = resolve;
+        })
+    );
+
+  await Promise.resolve();
+  desiredMode = STANDARD;
+  desiredMode = EXTENDED;
+  releaseWrite();
+
+  assert.equal(
+    await drainPromise,
+    EXTENDED
+  );
+  assert.deepEqual(
+    writtenModes,
+    [EXTENDED]
+  );
+});
+
+test("rejects a failed target-scoped mode write without pretending it drained", async () => {
+  await assert.rejects(
+    drainLatestModeWrite(
+      () => EXTENDED,
+      async () => {
+        throw new Error("write failed");
+      }
+    ),
+    /write failed/
   );
 });
 
@@ -615,6 +1139,66 @@ test("a Standard first send can adopt a later Extended selection at the new-chat
         draftMode: EXTENDED,
         activeDraftSend: true,
         sendSucceeded: true,
+        ...disqualifier
+      }),
+      false
+    );
+  }
+});
+
+test("binds either selected mode only after a unique successful draft send", () => {
+  const draft = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const saved = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  for (const mode of [
+    STANDARD,
+    EXTENDED
+  ]) {
+    assert.equal(
+      shouldBindDraftConversation({
+        fromRoute: draft,
+        toRoute: saved,
+        draftMode: mode,
+        activeDraftSend: true,
+        sendSucceeded: true
+      }),
+      true
+    );
+  }
+
+  for (const disqualifier of [
+    {
+      activeDraftSend: false,
+      sendSucceeded: true
+    },
+    {
+      activeDraftSend: true,
+      sendSucceeded: false
+    },
+    {
+      activeDraftSend: true,
+      sendSucceeded: true,
+      alreadyAdopted: true
+    },
+    {
+      activeDraftSend: true,
+      sendSucceeded: true,
+      targetWasPreexisting: true
+    },
+    {
+      activeDraftSend: true,
+      sendSucceeded: true,
+      navigationDisqualified: true
+    }
+  ]) {
+    assert.equal(
+      shouldBindDraftConversation({
+        fromRoute: draft,
+        toRoute: saved,
         ...disqualifier
       }),
       false

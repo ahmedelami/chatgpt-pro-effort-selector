@@ -11,6 +11,7 @@ import {
 } from "../core/verification-core.mjs";
 import {
   classifyLostOperation,
+  decideActiveSessionNavigation,
   isPreSendActivePhase,
   transitionPhase
 } from "../core/state-core.mjs";
@@ -23,11 +24,15 @@ const CAPTURE_TIMEOUT_MS = 10_000;
 const DUPLICATE_SETTLE_MS = 75;
 const CLEANUP_RETRY_MS = 750;
 const MAX_CLEANUP_ATTEMPTS = 3;
+const NAVIGATION_CONFIRM_TIMEOUT_MS = 1_000;
+const RECENT_HISTORY_CONFIRM_MS = 1_500;
 
 const SESSION_STORAGE_KEY = "proEffortRuntimeV1";
 
 const CONVERSATION_UUID_PATH_RE =
   /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+const TEMPORARY_CONVERSATION_PATH_RE =
+  /^\/c\/WEB:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const FETCH_PATTERNS = Object.freeze([
   Object.freeze({
@@ -365,6 +370,8 @@ function sanitizeActiveRecord(value) {
       value.requestContinued === true,
     replayAuthorized:
       value.replayAuthorized === true,
+    uiReplayStarted:
+      value.uiReplayStarted === true,
     pausedRequestIds:
       Array.isArray(value.pausedRequestIds)
         ? value.pausedRequestIds
@@ -468,6 +475,24 @@ function senderMatchesSession(sender, session) {
   );
 }
 
+function senderOwnsSessionDocument(
+  sender,
+  session
+) {
+  const parsedUrl = parseAllowedChatgptUrl(
+    sender.url ?? sender.tab?.url
+  );
+
+  return (
+    sender.tab?.id === session.tabId &&
+    sender.frameId === 0 &&
+    typeof session.documentId === "string" &&
+    session.documentId.length > 0 &&
+    sender.documentId === session.documentId &&
+    parsedUrl !== null
+  );
+}
+
 function createMinimalAudit(session, status, error) {
   return {
     generationId: session.generationId,
@@ -507,6 +532,8 @@ function recordActiveSession(session) {
       session.requestContinued === true,
     replayAuthorized:
       session.replayAuthorized === true,
+    uiReplayStarted:
+      session.uiReplayStarted === true,
     pausedRequestIds: [
       ...session.qualifyingRequestIds
     ]
@@ -527,10 +554,13 @@ function clearSessionTimers(session) {
   clearTimer(session.captureTimer);
   clearTimer(session.settleTimer);
   clearTimer(session.cleanupTimer);
+  clearTimer(session.navigationTimer);
 
   session.captureTimer = null;
   session.settleTimer = null;
   session.cleanupTimer = null;
+  session.navigationTimer = null;
+  session.pendingNavigationUrl = null;
 }
 
 function statusMessageFor(code, status) {
@@ -789,6 +819,14 @@ function createSession(sender, parsedUrl) {
     finalizing: false,
     requestContinued: false,
     replayAuthorized: false,
+    uiReplayStarted: false,
+    provisionalTransitionUsed: false,
+    canonicalTransitionUsed: false,
+    canonicalTargetPath: null,
+    pendingNavigationUrl: null,
+    navigationTimer: null,
+    lastHistoryStatePath: null,
+    lastHistoryStateAt: 0,
     qualifyingCount: 0,
     qualifyingRequestIds: new Set(),
     candidateEvent: null,
@@ -797,6 +835,308 @@ function createSession(sender, parsedUrl) {
     cleanupTimer: null,
     cleanupAttempts: 0,
     audit: null
+  };
+}
+
+function navigationDecisionForSession(
+  session,
+  nextUrl,
+  {
+    sameDocument,
+    status = null
+  }
+) {
+  return decideActiveSessionNavigation({
+    currentPath: session.pagePath,
+    nextUrl,
+    status,
+    sameDocument,
+    replayAuthorized:
+      session.replayAuthorized,
+    uiReplayStarted:
+      session.uiReplayStarted,
+    provisionalTransitionUsed:
+      session.provisionalTransitionUsed,
+    canonicalTransitionUsed:
+      session.canonicalTransitionUsed,
+    canonicalTargetPath:
+      session.canonicalTargetPath,
+    requestContinued:
+      session.requestContinued,
+    hasSubmittedUserMessageId:
+      typeof session.audit
+        ?.submittedUserMessageId ===
+        "string" &&
+      session.audit
+        .submittedUserMessageId
+        .length > 0,
+    phase: session.phase
+  });
+}
+
+function clearPendingNavigation(session) {
+  clearTimer(session.navigationTimer);
+  session.navigationTimer = null;
+  session.pendingNavigationUrl = null;
+}
+
+function schedulePendingNavigation(
+  session,
+  nextUrl
+) {
+  clearPendingNavigation(session);
+  session.pendingNavigationUrl = nextUrl;
+  session.navigationTimer = setTimeout(() => {
+    session.navigationTimer = null;
+    session.pendingNavigationUrl = null;
+
+    if (
+      activeSessions.get(session.tabId) ===
+        session
+    ) {
+      void finalizeFailedSession(
+        session,
+        "navigation"
+      );
+    }
+  }, NAVIGATION_CONFIRM_TIMEOUT_MS);
+}
+
+function isCanonicalAuthorizationPending(
+  session,
+  nextUrl
+) {
+  const parsedUrl =
+    parseAllowedChatgptUrl(nextUrl);
+
+  return (
+    parsedUrl !== null &&
+    session.canonicalTargetPath === null &&
+    session.provisionalTransitionUsed ===
+      true &&
+    TEMPORARY_CONVERSATION_PATH_RE.test(
+      session.pagePath
+    ) &&
+    CONVERSATION_UUID_PATH_RE.test(
+      parsedUrl.pathname
+    ) &&
+    session.canonicalTransitionUsed !==
+      true &&
+    session.requestContinued === true &&
+    typeof session.audit
+      ?.submittedUserMessageId ===
+      "string" &&
+    session.audit
+      .submittedUserMessageId
+      .length > 0 &&
+    [
+      "sent",
+      "cleaning",
+      "sent_warning"
+    ].includes(session.phase)
+  );
+}
+
+async function applyConfirmedHistoryNavigation(
+  session,
+  nextUrl
+) {
+  const decision =
+    navigationDecisionForSession(
+      session,
+      nextUrl,
+      {
+        sameDocument: true
+      }
+    );
+
+  if (decision.action === "fail") {
+    if (
+      isCanonicalAuthorizationPending(
+        session,
+        nextUrl
+      )
+    ) {
+      schedulePendingNavigation(
+        session,
+        nextUrl
+      );
+      return false;
+    }
+
+    await finalizeFailedSession(
+      session,
+      "navigation"
+    );
+    return false;
+  }
+
+  clearPendingNavigation(session);
+
+  if (decision.action === "advance") {
+    session.pagePath = decision.pagePath;
+
+    if (
+      decision.transition ===
+      "provisional"
+    ) {
+      session.provisionalTransitionUsed =
+        true;
+    } else if (
+      decision.transition ===
+      "canonical"
+    ) {
+      session.canonicalTransitionUsed =
+        true;
+    }
+
+    recordActiveSession(session);
+
+    if (!(await persistRequired())) {
+      await finalizeFailedSession(
+        session,
+        "state_store_failed"
+      );
+      return false;
+    }
+  }
+
+  session.lastHistoryStatePath =
+    decision.pagePath;
+  session.lastHistoryStateAt = Date.now();
+  return true;
+}
+
+async function authorizeCanonicalPromotion(
+  sender,
+  message
+) {
+  const tabId = sender.tab?.id;
+  const session =
+    Number.isInteger(tabId)
+      ? activeSessions.get(tabId)
+      : null;
+  const parsedTarget =
+    parseAllowedChatgptUrl(
+      `${CHATGPT_ORIGIN}${
+        typeof message.targetPath ===
+          "string"
+          ? message.targetPath
+          : ""
+      }`
+    );
+
+  if (
+    !session ||
+    !senderOwnsSessionDocument(
+      sender,
+      session
+    ) ||
+    session.generationId !==
+      message.generationId ||
+    !parsedTarget ||
+    !CONVERSATION_UUID_PATH_RE.test(
+      parsedTarget.pathname
+    ) ||
+    session.provisionalTransitionUsed !==
+      true ||
+    !TEMPORARY_CONVERSATION_PATH_RE.test(
+      session.pagePath
+    ) ||
+    session.requestContinued !== true ||
+    typeof session.audit
+      ?.submittedUserMessageId !==
+      "string" ||
+    session.audit
+      .submittedUserMessageId
+      .length === 0 ||
+    ![
+      "sent",
+      "cleaning",
+      "sent_warning"
+    ].includes(session.phase)
+  ) {
+    return {
+      ok: false,
+      code: "canonical_promotion_not_current"
+    };
+  }
+
+  if (
+    session.canonicalTargetPath &&
+    session.canonicalTargetPath !==
+      parsedTarget.pathname
+  ) {
+    await finalizeFailedSession(
+      session,
+      "navigation"
+    );
+
+    return {
+      ok: false,
+      code: "canonical_target_conflict"
+    };
+  }
+
+  session.canonicalTargetPath =
+    parsedTarget.pathname;
+
+  const pendingUrl =
+    session.pendingNavigationUrl;
+
+  if (pendingUrl) {
+    const parsedPending =
+      parseAllowedChatgptUrl(
+        pendingUrl
+      );
+
+    if (
+      parsedPending?.pathname ===
+        session.pagePath
+    ) {
+      /*
+       * A status-only loading update may have sampled the still-current WEB
+       * URL before Chrome publishes the canonical History API update. It is
+       * not a competing canonical target.
+       */
+      clearPendingNavigation(session);
+      return {
+        ok: true
+      };
+    }
+
+    if (
+      parsedPending?.pathname !==
+        session.canonicalTargetPath
+    ) {
+      await finalizeFailedSession(
+        session,
+        "navigation"
+      );
+
+      return {
+        ok: false,
+        code: "canonical_target_conflict"
+      };
+    }
+
+    const applied =
+      await applyConfirmedHistoryNavigation(
+        session,
+        pendingUrl
+      );
+
+    if (!applied) {
+      return {
+        ok: false,
+        code:
+          "canonical_promotion_not_current"
+      };
+    }
+  }
+
+  return {
+    ok: true
   };
 }
 
@@ -1326,6 +1666,63 @@ async function confirmArmed(sender, message) {
   return {
     ok: true,
     generationId: session.generationId
+  };
+}
+
+async function markReplayStarting(
+  sender,
+  message
+) {
+  const tabId = sender.tab?.id;
+  const session =
+    Number.isInteger(tabId)
+      ? activeSessions.get(tabId)
+      : null;
+
+  if (
+    !session ||
+    !senderMatchesSession(sender, session) ||
+    session.generationId !==
+      message.generationId ||
+    session.phase !== "armed" ||
+    !session.attached ||
+    session.detached ||
+    session.finalizing ||
+    !session.replayAuthorized ||
+    session.uiReplayStarted
+  ) {
+    return {
+      ok: false,
+      code: "replay_not_current",
+      message:
+        "The one-shot replay was no longer current."
+    };
+  }
+
+  session.uiReplayStarted = true;
+  recordActiveSession(session);
+
+  if (!(await persistRequired())) {
+    session.uiReplayStarted = false;
+    await finalizeFailedSession(
+      session,
+      "state_store_failed"
+    );
+
+    return {
+      ok: false,
+      code: "state_store_failed",
+      message: statusMessageFor(
+        "state_store_failed",
+        "failed"
+      )
+    };
+  }
+
+  return {
+    ok: true,
+    generationId:
+      session.generationId
   };
 }
 
@@ -2571,6 +2968,18 @@ async function handleRuntimeMessage(
     case "confirmArmed":
       return confirmArmed(sender, message);
 
+    case "markReplayStarting":
+      return markReplayStarting(
+        sender,
+        message
+      );
+
+    case "authorizeCanonicalPromotion":
+      return authorizeCanonicalPromotion(
+        sender,
+        message
+      );
+
     case "cancelArm":
       return cancelArm(sender, message);
 
@@ -2589,6 +2998,107 @@ async function handleRuntimeMessage(
 }
 
 const readyPromise = initializeRuntimeState();
+
+async function handleTabNavigationUpdate(
+  session,
+  changeInfo
+) {
+  let nextUrl =
+    typeof changeInfo.url === "string"
+      ? changeInfo.url
+      : null;
+
+  if (
+    !nextUrl &&
+    changeInfo.status === "loading"
+  ) {
+    try {
+      const tab =
+        await tabsGet(session.tabId);
+      nextUrl =
+        typeof tab.url === "string"
+          ? tab.url
+          : null;
+    } catch {
+      await finalizeFailedSession(
+        session,
+        "navigation"
+      );
+      return;
+    }
+  }
+
+  if (!nextUrl) {
+    return;
+  }
+
+  const parsedUrl =
+    parseAllowedChatgptUrl(nextUrl);
+
+  if (!parsedUrl) {
+    await finalizeFailedSession(
+      session,
+      "navigation"
+    );
+    return;
+  }
+
+  const decision =
+    navigationDecisionForSession(
+      session,
+      nextUrl,
+      {
+        sameDocument: true
+      }
+    );
+  const waitsForCanonicalTarget =
+    decision.action === "fail" &&
+    isCanonicalAuthorizationPending(
+      session,
+      nextUrl
+    );
+
+  if (
+    decision.action === "fail" &&
+    !waitsForCanonicalTarget
+  ) {
+    await finalizeFailedSession(
+      session,
+      "navigation"
+    );
+    return;
+  }
+
+  if (
+    changeInfo.status === "loading" &&
+    session.lastHistoryStatePath ===
+      parsedUrl.pathname &&
+    Date.now() -
+      session.lastHistoryStateAt <=
+      RECENT_HISTORY_CONFIRM_MS
+  ) {
+    return;
+  }
+
+  if (
+    decision.action === "keep" &&
+    changeInfo.status !== "loading"
+  ) {
+    return;
+  }
+
+  /*
+   * tabs.onUpdated does not distinguish a History API update from a real
+   * document load, and Chrome may split its URL and loading properties across
+   * events. Wait for webNavigation to prove that the original document
+   * performed a same-document history update. A committed document navigation
+   * is rejected immediately by the listener below.
+   */
+  schedulePendingNavigation(
+    session,
+    nextUrl
+  );
+}
 
 chrome.runtime.onMessage.addListener(
   (message, sender, sendResponse) => {
@@ -2656,7 +3166,36 @@ chrome.tabs.onUpdated.addListener(
         return;
       }
 
-      if (changeInfo.status === "loading") {
+      await handleTabNavigationUpdate(
+        session,
+        changeInfo
+      );
+    });
+  }
+);
+
+chrome.webNavigation.onHistoryStateUpdated
+  .addListener((details) => {
+    if (details.frameId !== 0) {
+      return;
+    }
+
+    void readyPromise.then(async () => {
+      const session =
+        activeSessions.get(
+          details.tabId
+        );
+
+      if (!session) {
+        return;
+      }
+
+      if (
+        typeof session.documentId !==
+          "string" ||
+        details.documentId !==
+          session.documentId
+      ) {
         await finalizeFailedSession(
           session,
           "navigation"
@@ -2664,20 +3203,38 @@ chrome.tabs.onUpdated.addListener(
         return;
       }
 
-      if (typeof changeInfo.url === "string") {
-        const parsed =
-          parseAllowedChatgptUrl(changeInfo.url);
+      await applyConfirmedHistoryNavigation(
+        session,
+        details.url
+      );
+    });
+  });
 
-        if (
-          !parsed ||
-          parsed.pathname !== session.pagePath
-        ) {
-          await finalizeFailedSession(
-            session,
-            "navigation"
-          );
-        }
+chrome.webNavigation.onCommitted.addListener(
+  (details) => {
+    if (details.frameId !== 0) {
+      return;
+    }
+
+    void readyPromise.then(async () => {
+      const session =
+        activeSessions.get(
+          details.tabId
+        );
+
+      if (!session) {
+        return;
       }
+
+      /*
+       * Any top-frame commit replaces or reloads the armed document. Only
+       * onHistoryStateUpdated from the original document may advance a live
+       * one-shot route.
+       */
+      await finalizeFailedSession(
+        session,
+        "navigation"
+      );
     });
   }
 );

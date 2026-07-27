@@ -109,7 +109,10 @@ A blank new chat has no canonical conversation UUID, so its mode is kept in that
 - it defaults to Standard
 - selecting either option survives reloads in the same tab
 - selecting Extended applies to its first captured normal Pro composer submission
-- once that send is known to have succeeded and ChatGPT creates a canonical `/c/<lowercase UUID>` route, Extended is written once to that new conversation's independent key
+- ChatGPT's provisional `/c/WEB:<lowercase UUID>` URL is treated as the same new-chat lifecycle, so it does not cancel the first Extended send or become a persistent storage identity
+- once that send is known to have succeeded and exactly one newly active canonical `/c/<lowercase UUID>` conversation appears, the selected mode is written to that conversation's independent key
+- while ChatGPT still displays the provisional `WEB:` URL, a bounded tab-session path-to-conversation map points mode reads and changes at that canonical conversation; reloading or returning with Back therefore preserves the chat's current selection
+- while first-send correlation is still finishing, a short-lived generation-scoped pending record survives a same-tab reload; it may resume binding only when the background reports that exact generation as sent, warning, or verified with a submitted user-message id
 - a pass-through Standard first send is tracked across the draft-to-saved route boundary, so selecting Extended before ChatGPT finishes assigning the new URL still binds Extended to the created conversation
 - merely navigating from a blank draft to an existing saved conversation does not copy the draft mode
 - a later blank new chat defaults to Standard
@@ -134,38 +137,39 @@ For every captured normal send-button, Enter, or form submission while that chat
    - `*://*/backend-api/f/conversation*`, resource type `Fetch`
 5. The content script performs a final current-tab, current-document, current-path, and current-generation arm check.
 6. Before acknowledging that check, the service worker records browser-session-only replay authorization.
-7. Only then does the content script replay the normal ChatGPT UI action once.
-8. Every unrelated paused request is continued immediately.
-9. The only qualifying request is a fresh `POST` whose parsed pathname is exactly:
+7. The content script marks that exact generation as starting its native UI replay, and the service worker persists the generation-scoped handshake.
+8. Only then does the content script replay the normal ChatGPT UI action once.
+9. Every unrelated paused request is continued immediately.
+10. The only qualifying request is a fresh `POST` whose parsed pathname is exactly:
    - `/backend-api/f/conversation`
-10. `/backend-api/f/conversation/prepare`, a trailing-slash route, and all other routes are unrelated.
-11. Exactly one qualifying pause must occur within 10 seconds.
-12. The fresh body must:
+11. `/backend-api/f/conversation/prepare`, a trailing-slash route, and all other routes are unrelated.
+12. Exactly one qualifying pause must occur within 10 seconds.
+13. The fresh body must:
     - be valid JSON
     - have `model === "gpt-5-6-pro"`
     - own string property `thinking_effort`
     - own string property `client_prepare_state`
     - contain a nonempty newest user message id
-13. A fresh semantic JSON clone is created.
-14. Only these top-level values are assigned:
+14. A fresh semantic JSON clone is created.
+15. Only these top-level values are assigned:
     - `model = "gpt-5-6-pro"`
     - `thinking_effort = "extended"`
     - `client_prepare_state = "none"`
-15. All other fresh body fields, including the fresh user message id, are preserved.
-16. Fresh request headers are preserved except:
+16. All other fresh body fields, including the fresh user message id, are preserved.
+17. Fresh request headers are preserved except:
     - `x-conduit-token`
     - `content-length`
-17. Header-name matching is case-insensitive.
-18. Header values are never logged or persisted.
-19. The same paused request is continued with the modified UTF-8 JSON encoded as base64 and the filtered fresh headers.
-20. Immediately after Chrome acknowledges that continuation, the extension clears interception with:
+18. Header-name matching is case-insensitive.
+19. Header values are never logged or persisted.
+20. The same paused request is continued with the modified UTF-8 JSON encoded as base64 and the filtered fresh headers.
+21. Immediately after Chrome acknowledges that continuation, the extension clears interception with:
 
 ```text
 Fetch.enable({ patterns: [] })
 ```
 
-21. The extension never calls `Fetch.disable`.
-22. The extension then detaches the debugger.
+22. The extension never calls `Fetch.disable`.
+23. The extension then detaches the debugger.
 
 That debugger/request operation is one-shot for one fresh composer submission. After it ends, the conversation's Extended mode remains selected. A later captured composer submission in the same chat creates a new generation and freshly repeats the arm, confirmation, replay, mutation, continuation, and cleanup lifecycle.
 
@@ -190,8 +194,12 @@ On SPA navigation, the content script:
 - loads the destination saved conversation's independent mode before a captured submission is allowed to replay
 - blocks rather than replaying a captured submission if the destination mode cannot be loaded or the route changes again during that load
 - preserves conservative fail-closed or outcome-uncertain handling when navigation interrupts an active one-shot operation
+- permits only one replay-authorized, same-document blank-chat to exact `/c/WEB:<lowercase UUID>` transition during the active first-send lifecycle
+- uses `webNavigation` document identity to distinguish that History API transition from a reload or full-document navigation even when Chrome splits URL and `loading` updates across separate events
+- permits one later `WEB:` to canonical promotion only after the same generation continued a request with a submitted user-message id and the content script correlated the exact canonical target to the unique newly active conversation
+- keeps full-document loading, unrelated paths, an uncorrelated canonical target, and a second provisional or canonical transition fail-closed
 
-The background state API restores only a currently active operation whose recorded pathname matches the requesting page. A completed or unrelated tab audit is not restored into the destination chat.
+When an allowed history transition is accepted, the background updates the active operation's recorded pathname before persisting it. `tabs.onUpdated` alone never authorizes the route change. The background state API otherwise restores only a currently active operation whose recorded pathname matches the requesting page. A completed or unrelated tab audit is not restored into the destination chat.
 
 ## Duplicate protection
 
@@ -358,7 +366,7 @@ Used for:
 - deterministic retirement of the obsolete global `effortPreference` key
 - ephemeral redacted one-shot state in `chrome.storage.session`
 
-The unsaved blank-chat mode uses the page's same-origin `sessionStorage`, not the extension `storage` permission. It stores only the scalar string `standard` or `extended`; it never stores prompt or response content.
+The unsaved blank-chat mode uses the page's same-origin `sessionStorage`, not the extension `storage` permission. It stores the scalar string `standard` or `extended`. After a provisional `WEB:` chat is correlated to exactly one saved conversation, it also keeps a bounded map of recent temporary paths to canonical conversation UUIDs so reloads and same-tab Back navigation keep using each saved chat's mode. During first-send correlation, a maximum-two-minute pending record contains only the generation id, selected mode, route identifiers, timestamp, and preexisting conversation keys; recovery still requires matching successful background state. It never stores prompt or response content.
 
 ### `debugger`
 
@@ -369,6 +377,10 @@ This is a powerful permission and causes a Chrome warning.
 ### `scripting`
 
 Supports the maintenance-only redacting verification path in ChatGPT's MAIN world. The ordinary two-option picker does not invoke it.
+
+### `webNavigation`
+
+Distinguishes an exact same-document ChatGPT History API route update from a top-frame reload or committed navigation while a one-shot Extended operation is active. It is scoped by the extension's `https://chatgpt.com/*` host permission.
 
 No remote script is loaded.
 
