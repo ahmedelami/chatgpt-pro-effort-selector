@@ -1,0 +1,578 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+await import("../core/mode-core.js");
+
+const {
+  STANDARD,
+  EXTENDED,
+  MODE_STORAGE_PREFIX,
+  normalizeMode,
+  storageKeyForConversationId,
+  parseChatRoute,
+  sameChatRoute,
+  readModeForRoute,
+  storageChangeAffectsRoute,
+  isDraftAdoptionTarget,
+  shouldAdoptDraftMode,
+  decideSubmissionForMode
+} = globalThis.ProEffortModeCore;
+
+const CHAT_A =
+  "11111111-1111-4111-8111-111111111111";
+const CHAT_B =
+  "22222222-2222-4222-8222-222222222222";
+const CHAT_WITH_HEX =
+  "abcdefab-cdef-4abc-8def-abcdefabcdef";
+
+test("parses only canonical lowercase saved-conversation URLs", () => {
+  const route = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}?model=pro`
+  );
+
+  assert.deepEqual(route, {
+    kind: "conversation",
+    conversationId: CHAT_A,
+    storageKey:
+      `${MODE_STORAGE_PREFIX}${CHAT_A}`,
+    pathname: `/c/${CHAT_A}`
+  });
+
+  for (const rawUrl of [
+    "https://chatgpt.com/",
+    "https://chatgpt.com/new",
+    `https://chatgpt.com/c/${CHAT_A}/`,
+    `https://chatgpt.com/c/${CHAT_WITH_HEX.toUpperCase()}`,
+    `https://example.com/c/${CHAT_A}`,
+    "not a URL"
+  ]) {
+    assert.equal(
+      parseChatRoute(rawUrl).kind,
+      "draft"
+    );
+  }
+});
+
+test("preserves the parsed pathname for noncanonical routes", () => {
+  assert.deepEqual(
+    parseChatRoute(
+      "https://chatgpt.com/new?model=pro"
+    ),
+    {
+      kind: "draft",
+      conversationId: null,
+      storageKey: null,
+      pathname: "/new"
+    }
+  );
+
+  assert.deepEqual(
+    parseChatRoute("not a URL"),
+    {
+      kind: "draft",
+      conversationId: null,
+      storageKey: null,
+      pathname: ""
+    }
+  );
+});
+
+test("gives each saved conversation an independent storage key and mode", () => {
+  const routeA = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+  const routeB = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_B}`
+  );
+
+  assert.notEqual(
+    routeA.storageKey,
+    routeB.storageKey
+  );
+  assert.equal(
+    routeA.storageKey,
+    storageKeyForConversationId(CHAT_A)
+  );
+  assert.equal(
+    routeB.storageKey,
+    storageKeyForConversationId(CHAT_B)
+  );
+
+  const storedValues = {
+    [routeA.storageKey]: EXTENDED,
+    [routeB.storageKey]: STANDARD
+  };
+
+  assert.equal(
+    readModeForRoute(
+      storedValues,
+      routeA
+    ),
+    EXTENDED
+  );
+  assert.equal(
+    readModeForRoute(
+      storedValues,
+      routeB
+    ),
+    STANDARD
+  );
+});
+
+test("missing and corrupt stored values default to Standard", () => {
+  const route = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  for (const storedValues of [
+    undefined,
+    null,
+    {},
+    {
+      [route.storageKey]: "unexpected"
+    },
+    {
+      [route.storageKey]: null
+    },
+    {
+      [route.storageKey]: true
+    }
+  ]) {
+    assert.equal(
+      readModeForRoute(
+        storedValues,
+        route
+      ),
+      STANDARD
+    );
+  }
+
+  assert.equal(
+    readModeForRoute(
+      {
+        [route.storageKey]: EXTENDED
+      },
+      {
+        kind: "conversation",
+        storageKey: null
+      }
+    ),
+    STANDARD
+  );
+
+  assert.equal(
+    normalizeMode(EXTENDED),
+    EXTENDED
+  );
+  assert.equal(
+    normalizeMode(STANDARD),
+    STANDARD
+  );
+  assert.equal(
+    normalizeMode("extended "),
+    STANDARD
+  );
+});
+
+test("legacy global preference is not a per-chat fallback", () => {
+  const route = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  assert.equal(
+    readModeForRoute(
+      {
+        effortPreference: EXTENDED
+      },
+      route
+    ),
+    STANDARD
+  );
+
+  assert.equal(
+    storageChangeAffectsRoute(
+      {
+        effortPreference: {
+          oldValue: STANDARD,
+          newValue: EXTENDED
+        }
+      },
+      route
+    ),
+    false
+  );
+});
+
+test("keeps UUID-less draft mode document-local", () => {
+  const rootDraft = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const newDraft = parseChatRoute(
+    "https://chatgpt.com/new"
+  );
+  const saved = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  assert.equal(
+    sameChatRoute(rootDraft, newDraft),
+    true
+  );
+  assert.equal(
+    sameChatRoute(rootDraft, saved),
+    false
+  );
+  assert.equal(
+    readModeForRoute(
+      {},
+      rootDraft,
+      EXTENDED
+    ),
+    EXTENDED
+  );
+  assert.equal(
+    readModeForRoute(
+      {},
+      rootDraft,
+      "corrupt"
+    ),
+    STANDARD
+  );
+});
+
+test("distinguishes saved conversations while treating equivalent saved routes as the same chat", () => {
+  const routeA = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+  const routeAWithQuery = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}?model=pro`
+  );
+  const routeB = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_B}`
+  );
+
+  assert.equal(
+    sameChatRoute(
+      routeA,
+      routeAWithQuery
+    ),
+    true
+  );
+  assert.equal(
+    sameChatRoute(routeA, routeB),
+    false
+  );
+  assert.equal(
+    sameChatRoute(null, routeA),
+    false
+  );
+});
+
+test("adopts an Extended draft only for its active successful first send", () => {
+  const draft = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const saved = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  assert.equal(
+    isDraftAdoptionTarget({
+      fromRoute: draft,
+      toRoute: saved,
+      draftMode: EXTENDED,
+      activeDraftSend: true
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldAdoptDraftMode({
+      fromRoute: draft,
+      toRoute: saved,
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      sendSucceeded: true
+    }),
+    true
+  );
+
+  for (const variant of [
+    {
+      draftMode: STANDARD,
+      activeDraftSend: true,
+      sendSucceeded: true
+    },
+    {
+      draftMode: EXTENDED,
+      activeDraftSend: false,
+      sendSucceeded: true
+    },
+    {
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      sendSucceeded: false
+    },
+    {
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      sendSucceeded: true,
+      alreadyAdopted: true
+    },
+    {
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      sendSucceeded: true,
+      targetWasPreexisting: true
+    },
+    {
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      sendSucceeded: true,
+      navigationDisqualified: true
+    }
+  ]) {
+    assert.equal(
+      shouldAdoptDraftMode({
+        fromRoute: draft,
+        toRoute: saved,
+        ...variant
+      }),
+      false
+    );
+  }
+
+  assert.equal(
+    shouldAdoptDraftMode({
+      fromRoute: saved,
+      toRoute: parseChatRoute(
+        `https://chatgpt.com/c/${CHAT_B}`
+      ),
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      sendSucceeded: true
+    }),
+    false
+  );
+});
+
+test("does not adopt a draft mode into another draft or an invalid saved-route shape", () => {
+  const draft = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+
+  assert.equal(
+    isDraftAdoptionTarget({
+      fromRoute: draft,
+      toRoute: parseChatRoute(
+        "https://chatgpt.com/new"
+      ),
+      draftMode: EXTENDED,
+      activeDraftSend: true
+    }),
+    false
+  );
+
+  assert.equal(
+    isDraftAdoptionTarget({
+      fromRoute: draft,
+      toRoute: {
+        kind: "conversation",
+        storageKey: null
+      },
+      draftMode: EXTENDED,
+      activeDraftSend: true
+    }),
+    false
+  );
+});
+
+test("does not adopt an Extended draft into a preexisting or explicitly navigated conversation", () => {
+  const draft = parseChatRoute(
+    "https://chatgpt.com/"
+  );
+  const saved = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+
+  assert.equal(
+    isDraftAdoptionTarget({
+      fromRoute: draft,
+      toRoute: saved,
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      targetWasPreexisting: true
+    }),
+    false
+  );
+
+  assert.equal(
+    isDraftAdoptionTarget({
+      fromRoute: draft,
+      toRoute: saved,
+      draftMode: EXTENDED,
+      activeDraftSend: true,
+      navigationDisqualified: true
+    }),
+    false
+  );
+});
+
+test("same-chat storage changes synchronize while unrelated changes are ignored", () => {
+  const routeA = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_A}`
+  );
+  const routeB = parseChatRoute(
+    `https://chatgpt.com/c/${CHAT_B}`
+  );
+
+  assert.equal(
+    storageChangeAffectsRoute(
+      {
+        [routeA.storageKey]: {
+          oldValue: STANDARD,
+          newValue: EXTENDED
+        }
+      },
+      routeA
+    ),
+    true
+  );
+
+  assert.equal(
+    storageChangeAffectsRoute(
+      {
+        [routeA.storageKey]: {
+          oldValue: EXTENDED
+        }
+      },
+      routeA
+    ),
+    true
+  );
+
+  assert.equal(
+    storageChangeAffectsRoute(
+      {
+        [routeB.storageKey]: {
+          oldValue: STANDARD,
+          newValue: EXTENDED
+        }
+      },
+      routeA
+    ),
+    false
+  );
+
+  assert.equal(
+    storageChangeAffectsRoute(
+      null,
+      routeA
+    ),
+    false
+  );
+
+  assert.equal(
+    storageChangeAffectsRoute(
+      {
+        [routeA.storageKey]: {
+          oldValue: STANDARD,
+          newValue: EXTENDED
+        }
+      },
+      {
+        kind: "conversation",
+        storageKey: null
+      }
+    ),
+    false
+  );
+});
+
+test("submission policy follows mode and current visible model state", () => {
+  assert.deepEqual(
+    decideSubmissionForMode(
+      STANDARD,
+      "pro"
+    ),
+    {
+      mode: STANDARD,
+      policy: "pass"
+    }
+  );
+
+  assert.deepEqual(
+    decideSubmissionForMode(
+      EXTENDED,
+      "pro"
+    ),
+    {
+      mode: EXTENDED,
+      policy: "gate"
+    }
+  );
+
+  assert.deepEqual(
+    decideSubmissionForMode(
+      EXTENDED,
+      "other"
+    ),
+    {
+      mode: EXTENDED,
+      policy: "pass"
+    }
+  );
+
+  assert.deepEqual(
+    decideSubmissionForMode(
+      EXTENDED,
+      "unknown"
+    ),
+    {
+      mode: EXTENDED,
+      policy: "block_unknown"
+    }
+  );
+
+  assert.deepEqual(
+    decideSubmissionForMode(
+      "corrupt",
+      "pro"
+    ),
+    {
+      mode: STANDARD,
+      policy: "pass"
+    }
+  );
+});
+
+test("repeated gate decisions and failures never reset an Extended chat mode", () => {
+  let mode = EXTENDED;
+
+  for (const [modelState, policy] of [
+    ["pro", "gate"],
+    ["unknown", "block_unknown"],
+    ["pro", "gate"],
+    ["other", "pass"],
+    ["pro", "gate"]
+  ]) {
+    const decision =
+      decideSubmissionForMode(
+        mode,
+        modelState
+      );
+
+    assert.equal(
+      decision.policy,
+      policy
+    );
+    assert.equal(
+      decision.mode,
+      EXTENDED
+    );
+
+    mode = decision.mode;
+  }
+
+  assert.equal(mode, EXTENDED);
+});

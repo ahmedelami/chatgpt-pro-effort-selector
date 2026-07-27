@@ -1,0 +1,321 @@
+.pe-root {
+  --pe-font-family: var(
+    --pe-native-font-family,
+    inherit
+  );
+  --pe-font-size: var(
+    --pe-native-font-size,
+    14px
+  );
+  --pe-font-weight: var(
+    --pe-native-font-weight,
+    500
+  );
+  --pe-foreground: var(
+    --pe-native-foreground,
+    currentColor
+  );
+  --pe-control-background: var(
+    --pe-native-control-background,
+    transparent
+  );
+
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  align-self: center;
+  min-width: 0;
+  max-width: 100%;
+  height: fit-content;
+  margin-inline-start: 2px;
+  color: var(--pe-foreground);
+  font-family: var(--pe-font-family);
+  font-size: var(--pe-font-size);
+  font-weight: var(--pe-font-weight);
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.pe-root *,
+.pe-popover *,
+.pe-toast {
+  box-sizing: border-box;
+}
+
+.pe-trigger {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--pe-control-background) 94%,
+    var(--pe-foreground) 6%
+  );
+  color: var(--pe-foreground);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.pe-trigger:hover {
+  background: color-mix(
+    in srgb,
+    var(--pe-control-background) 90%,
+    var(--pe-foreground) 10%
+  );
+}
+
+.pe-trigger:focus-visible,
+.pe-option:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.pe-trigger::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-inline-start: 7px;
+  border-inline-end: 1.5px solid
+    currentColor;
+  border-block-end: 1.5px solid
+    currentColor;
+  opacity: 0.68;
+  transform:
+    translateY(-1px)
+    rotate(45deg);
+}
+
+.pe-popover {
+  --pe-font-family: var(
+    --font-sans,
+    var(
+      --pe-native-font-family,
+      ui-sans-serif,
+      system-ui,
+      sans-serif
+    )
+  );
+  --pe-font-size: 14px;
+  --pe-foreground: var(
+    --text-primary,
+    var(
+      --pe-native-foreground,
+      CanvasText
+    )
+  );
+  --pe-surface: var(
+    --main-surface-primary,
+    var(
+      --surface-primary,
+      var(
+        --pe-native-surface,
+        Canvas
+      )
+    )
+  );
+  --pe-hover: color-mix(
+    in srgb,
+    currentColor 7%,
+    transparent
+  );
+
+  position: fixed;
+  z-index: 2147483600;
+  box-sizing: border-box;
+  width: min(152px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 16px;
+  background: var(--pe-surface);
+  color: var(--pe-foreground);
+  box-shadow:
+    0 8px 12px rgb(0 0 0 / 8%),
+    0 0 0 1px
+      color-mix(
+        in srgb,
+        var(--pe-foreground) 8%,
+        transparent
+      );
+  font-family: var(--pe-font-family);
+  font-size: var(--pe-font-size);
+  line-height: 20px;
+  isolation: isolate;
+}
+
+.pe-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pe-option {
+  appearance: none;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    16px;
+  grid-template-rows: 1fr;
+  column-gap: 8px;
+  min-width: 0;
+  width: 100%;
+  height: 36px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 20px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pe-option::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: 4px;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.pe-option:hover:not(
+    [aria-disabled="true"]
+  )::before {
+  background: var(--pe-hover);
+}
+
+.pe-option[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.pe-option-title {
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pe-option-check {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1;
+  align-items: center;
+  align-self: center;
+  justify-content: flex-end;
+  width: 16px;
+  height: 20px;
+  opacity: 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.pe-option[aria-checked="true"]
+  .pe-option-check {
+  opacity: 1;
+}
+
+.pe-live-region {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pe-toast {
+  position: fixed;
+  z-index: 2147483640;
+  right: 16px;
+  bottom: 16px;
+  width: min(400px, calc(100vw - 32px));
+  padding: 11px 13px;
+  border: 1px solid
+    var(
+      --border-light,
+      color-mix(
+        in srgb,
+        currentColor 18%,
+        transparent
+      )
+    );
+  border-radius: 12px;
+  background: var(
+    --main-surface-primary,
+    var(--surface-primary, Canvas)
+  );
+  color: var(
+    --text-primary,
+    CanvasText
+  );
+  box-shadow:
+    0 16px 38px rgb(0 0 0 / 18%),
+    0 3px 10px rgb(0 0 0 / 10%);
+  font:
+    500 13px/1.4
+    var(
+      --font-sans,
+      ui-sans-serif,
+      system-ui,
+      sans-serif
+    );
+}
+
+@media (max-width: 480px) {
+  .pe-root {
+    margin-inline-start: 1px;
+  }
+
+  .pe-trigger {
+    padding-inline: 7px;
+  }
+
+  .pe-popover {
+    width: min(
+      152px,
+      calc(100vw - 16px)
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pe-trigger {
+    transition: none;
+  }
+}
