@@ -12,9 +12,7 @@
   <img src="docs/images/standard-to-extended-thinking-effort.png" alt="Chrome request metadata showing thinking effort changing from standard to extended" width="1200">
 </p>
 
-## Install with CODEX 5.6 Sol Ultra
-
-Copy and paste this prompt:
+## Copy and paste into Codex 5.6 Sol Ultra
 
 ```text
 Download or safely update the ChatGPT Pro Effort Selector from:
