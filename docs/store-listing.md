@@ -74,8 +74,8 @@ All executable code is contained in the submitted ZIP. There are no third-party 
 
 - **Visibility:** Public.
 - **Pricing:** Free extension; an independently purchased ChatGPT Pro subscription is required.
-- **Suggested category:** Productivity.
-- **Regions:** Select only regions where the publisher intends to support the listing and ChatGPT Pro is available.
+- **Category:** Workflow & Planning.
+- **Regions:** All regions.
 - **Homepage:** `https://github.com/ahmedelami/chatgpt-pro-effort-selector`
 - **Support:** `https://github.com/ahmedelami/chatgpt-pro-effort-selector/issues`
 - **Privacy policy:** `https://github.com/ahmedelami/chatgpt-pro-effort-selector/blob/main/PRIVACY.md`
@@ -92,21 +92,9 @@ The icon and promotional tile use the original monochrome two-bar effort mark. E
 
 ## Private reviewer test instructions
 
-Paste the following into the dashboard's private **Test instructions** field:
+The dashboard limits **Additional instructions** to 500 characters. Paste this 498-character note:
 
-> **Required access:** Chrome 120 or later and a reviewer-authorized ChatGPT account whose model picker visibly offers Pro or GPT-5.6 Pro. This extension's core behavior cannot be fully exercised without ChatGPT Pro. No credentials are included in the public package or listing. Keep DevTools, Protocol Monitor, and every other debugger-based browser tool detached during the Extended send because Chrome permits only one debugger client for the tab.
->
-> 1. Install the extension and open `https://chatgpt.com/` in a normal top-level tab. Sign in with the authorized Pro-capable review account.
-> 2. Start a new chat and choose the visible **Pro** or **GPT-5.6 Pro** model in ChatGPT's own model picker.
-> 3. Confirm a compact **Sta..** control appears beside the Pro model control. Open it and confirm the menu contains exactly **Standard** and **Extended**.
-> 4. Select **Standard**. Enter `Reply with exactly: standard test ok` and submit through ChatGPT's normal composer. Confirm one user message is sent normally and Chrome shows no debugger indication.
-> 5. In the same conversation, open the effort control and select **Extended**. Enter `Reply with exactly: extended test ok` and submit through ChatGPT's normal composer button or Enter. Do not attach DevTools or another debugger during this step.
-> 6. Confirm Chrome briefly shows its extension-debugging indication, exactly one user message is submitted, ChatGPT responds normally, the debugger indication disappears promptly, and the closed effort control displays **Ext..**.
-> 7. After the conversation has a canonical `/c/<UUID>` URL, reload it. Confirm **Ext..** remains selected for that saved conversation.
-> 8. Open a different saved conversation with no prior extension mode and confirm it defaults independently to **Sta..**.
-> 9. Return to the test conversation, choose **Standard**, and leave it in Standard mode.
->
-> Expected safety behavior: Standard never attaches the debugger or changes requests. Extended attaches only immediately before a user-initiated normal composer submission, handles one eligible fresh Pro request, then clears interception and detaches. A non-Pro request is never rewritten to Pro. If Chrome cannot attach or the request does not match the required schema, the operation blocks or reports an uncertain outcome rather than silently claiming Extended succeeded.
+> Requires Chrome 120+ and a reviewer-authorized ChatGPT account with Pro/GPT-5.6 Pro; no credentials are provided. Keep DevTools and other debugger tools detached. Open chatgpt.com, choose Pro, and confirm Sta.. appears with Standard/Extended options. In Standard, send normally and confirm no debugger indicator. Select Extended, send normally, and confirm one message, a response, a brief debugger indicator, then detachment. Reload the saved chat to confirm Ext.. persists; return it to Standard.
 
 Before submission, resolve how reviewers will obtain authorized ChatGPT Pro access. If Google requires publisher-supplied test credentials, provide only a dedicated, policy-compliant review account in the private dashboard field; never commit credentials to this repository or place them in the public listing.
 
