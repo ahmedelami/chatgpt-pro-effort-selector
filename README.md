@@ -1,4 +1,4 @@
-# Copy and paste this prompt to your AI agent
+# Copy and paste this prompt to CODEX 5.6 Sol Ultra
 
 ```text
 Download or safely update the ChatGPT Pro Effort Selector from:
