@@ -1,4 +1,22 @@
-# Copy and paste this prompt to CODEX 5.6 Sol Ultra
+# ChatGPT Pro Effort Selector
+
+**Standard for everyday Pro prompts. Extended when a hard problem deserves more reasoning.**
+
+### 1. Choose Standard or Extended beside Pro
+
+<p align="center">
+  <img src="docs/images/pro-effort-selector.png" alt="Standard and Extended effort selector beside ChatGPT Pro" width="636">
+</p>
+
+### 2. Extended changes the request from `thinking_effort: "standard"` → `"extended"`
+
+<p align="center">
+  <img src="docs/images/standard-to-extended-thinking-effort.png" alt="Chrome request metadata showing thinking effort changing from standard to extended" width="1200">
+</p>
+
+## Install with CODEX 5.6 Sol Ultra
+
+Copy and paste this prompt:
 
 ```text
 Download or safely update the ChatGPT Pro Effort Selector from:
@@ -24,8 +42,6 @@ Work autonomously until it is installed and visibly verified in Google Chrome.
 9. Do not send a ChatGPT message unless I explicitly ask for a live request test. If I do request one, keep DevTools and every other debugger-based browser tool detached during the Extended send because the extension needs exclusive temporary debugger access.
 10. Report the clone path, extension version, validation result, and visible Chrome verification. Leave ChatGPT open and leave the current test chat in Standard mode.
 ```
-
-# ChatGPT Pro Effort Selector
 
 A dependency-free Manifest V3 Chrome extension that exposes a compact **Standard / Extended** selector beside ChatGPT's composer model control only when the currently visible model is exactly **Pro** or **GPT-5.6 Pro**.
 
@@ -64,6 +80,10 @@ chatgpt-pro-effort-selector/
 │   ├── request-core.mjs
 │   ├── state-core.mjs
 │   └── verification-core.mjs
+├── docs/
+│   └── images/
+│       ├── pro-effort-selector.png
+│       └── standard-to-extended-thinking-effort.png
 └── tests/
     ├── mode-core.test.mjs
     ├── request-core.test.mjs
