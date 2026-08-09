@@ -1,14 +1,12 @@
 # ChatGPT Pro Effort Selector
 
-**Standard for everyday Pro prompts. Extended when a hard problem deserves more reasoning.**
-
-### 1. Choose Standard or Extended beside Pro
+**OpenAI exposed Standard and Extended thinking in GPT-5.5 Pro. GPT-5.6 Pro hides that choice; this extension brings it back.**
 
 <p align="center">
   <img src="docs/images/pro-effort-selector.png" alt="Standard and Extended effort selector beside ChatGPT Pro" width="636">
 </p>
 
-### 2. Extended changes the request from `thinking_effort: "standard"` → `"extended"`
+### Extended changes the request from `thinking_effort: "standard"` → `"extended"`
 
 <p align="center">
   <img src="docs/images/standard-to-extended-thinking-effort.png" alt="Chrome request metadata showing thinking effort changing from standard to extended" width="1200">
