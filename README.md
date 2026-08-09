@@ -88,18 +88,17 @@ Keep DevTools, Protocol Monitor, and other debugger-based tools detached during 
 
 | Access | Why it is needed |
 | --- | --- |
-| `https://chatgpt.com/*` | Runs the selector and same-origin maintenance verifier only on ChatGPT |
+| `https://chatgpt.com/*` | Runs the selector only on ChatGPT |
 | `debugger` | Briefly intercepts one Extended send |
 | `storage` | Saves per-chat modes and redacted session state |
 | `webNavigation` | Keeps an operation bound to the correct conversation |
-| `scripting` | Supports the maintenance-only verifier |
 
 - No telemetry or remote code.
 - Prompts, responses, cookies, authorization values, and header values are not retained.
 - The full request body is parsed transiently and never retained; browser-session storage keeps only redacted audit fields and the minimal operational identifiers described in the technical reference.
 - The debugger is attached only for an Extended send and detached as quickly as the one-shot lifecycle permits.
 
-See the [technical reference](docs/technical-reference.md) for the complete permission, redacted-audit, recovery, and verification design.
+See the [technical reference](docs/technical-reference.md) for the complete permission, redacted-audit, and recovery design.
 
 ## Manual installation
 
@@ -129,17 +128,27 @@ npm run validate
 
 This checks every extension script and runs the complete automated test suite.
 
+Create the deterministic Chrome Web Store upload ZIP with:
+
+~~~bash
+npm run package
+~~~
+
+The archive is written to `dist/` with `manifest.json` at its root.
+
 ## Technical documentation
 
-- [Technical reference](docs/technical-reference.md) — storage, request lifecycle, navigation, recovery, verification, permissions, privacy, and project structure.
-- [Manual QA checklist](docs/manual-qa.md) — full browser, accessibility, mode, persistence, failure, and verification test matrix.
+- [Technical reference](docs/technical-reference.md) — storage, request lifecycle, navigation, recovery, permissions, privacy, and project structure.
+- [Manual QA checklist](docs/manual-qa.md) — full browser, accessibility, mode, persistence, and failure test matrix.
+- [Privacy policy](PRIVACY.md) — public disclosure of local processing, retained state, and user control.
+- [Chrome Web Store listing](docs/store-listing.md) — listing copy, permission justifications, upload assets, and reviewer instructions.
 
 ## Known limitations
 
 - The extension depends on unsupported ChatGPT DOM and request internals.
 - ChatGPT or Chrome changes can break it.
 - Shadow DOM isolates the selector's internal styling, but not model detection, mount-point discovery, or request schemas.
-- The extension intentionally blocks Extended or withholds proof when required structure no longer matches.
+- The extension intentionally blocks Extended or reports an uncertain outcome when required structure no longer matches.
 
 ## License
 

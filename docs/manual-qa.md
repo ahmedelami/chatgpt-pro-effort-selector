@@ -24,7 +24,7 @@ Use a unique marker in every test prompt. When checking backend metadata, keep D
 6. Confirm the selector is a borderless 36 px composer control that is transparent at rest, uses the nearby model control's font and foreground tokens where available, and shows a restrained background only while hovered.
 7. Confirm the open picker is approximately 152 px wide with a 16 px radius and exactly two 36 px single-line choice rows: Standard and Extended.
 8. Confirm selection is communicated by the right-side checkmark, with no persistent selected-row fill and only a restrained hover surface.
-9. Confirm the picker never adds a heading, descriptions, status text, verification controls, or a wider operational section.
+9. Confirm the picker never adds a heading, descriptions, status text, operational controls, or a wider operational section.
 10. Resize to a narrow viewport and confirm the popover remains fully on-screen and scrolls internally when necessary.
 11. Resize or scroll the composer and confirm the open popover continues tracking the trigger.
 
@@ -66,12 +66,12 @@ Use a unique marker in every test prompt. When checking backend metadata, keep D
 5. Press the normal ChatGPT send button.
 6. Confirm Chrome briefly shows its debugger indication.
 7. Confirm exactly one user submission occurs.
-8. Confirm the picker never adds status or verification text during the send.
+8. Confirm the picker never adds status text during the send.
 9. Confirm the debugger indication disappears promptly.
 10. Enter a second prompt in the same conversation without changing the selector.
 11. Press the normal send button again.
 12. Confirm a fresh one-shot generation is armed and the second request is also sent Extended.
-13. Confirm the conversation remains Extended after success, warning, verification, failure, or timeout.
+13. Confirm the conversation remains Extended after success, warning, failure, or timeout.
 
 ## Extended keyboard send
 
@@ -162,7 +162,7 @@ Run this five-send sequence in one canonical chat, using a unique marker for eve
 2. Trigger a send in a state where ChatGPT does not produce the exact conversation POST.
 3. Wait approximately 10 seconds.
 4. Confirm the operation reports **Extended outcome uncertain** after replay authorization, or a definite blocker if replay was explicitly cancelled before dispatch.
-5. Confirm it is never reported as Verified Extended without durable proof.
+5. Confirm it never reports a clean Extended success.
 
 ## Model mismatch
 
@@ -186,7 +186,7 @@ Run this five-send sequence in one canonical chat, using a unique marker for eve
 5. Start another Extended send.
 6. Open DevTools while Arming.
 7. Confirm the extension reports a blocker or explicitly uncertain outcome.
-8. Confirm it never labels the result Verified Extended without durable proof.
+8. Confirm it never labels the result as a clean Extended success.
 
 ## Navigation and tab closure
 
@@ -198,7 +198,7 @@ Run this five-send sequence in one canonical chat, using a unique marker for eve
 6. During an A-to-B SPA transition, attempt a normal composer submission before B's storage read completes.
 7. Confirm the original event is stopped and is replayed only after B's mode is loaded, or remains blocked if loading fails or the route changes again.
 8. Confirm a terminal status from A's retired generation cannot overwrite B's UI.
-9. Confirm the destination route does not restore an unrelated completed tab audit as its own Sent or Verified state.
+9. Confirm the destination route does not restore an unrelated completed tab audit as its own Sent or warning state.
 
 ## Multiple tabs
 
@@ -217,7 +217,7 @@ Run this five-send sequence in one canonical chat, using a unique marker for eve
 4. Confirm stale paused request ids are aborted where possible.
 5. Confirm the debugger patterns are cleared and detachment is attempted.
 6. Confirm the result is blocked, uncertain, or sent-with-warning according to the safely retained phase.
-7. Confirm it is never silently promoted to Verified Extended.
+7. Confirm it never silently reports a clean Extended send.
 
 ## Extension reload
 
@@ -226,12 +226,5 @@ Run this five-send sequence in one canonical chat, using a unique marker for eve
 3. Confirm no request body, header values, prompt, or response is restored.
 4. Confirm each canonical conversation's persistent mode remains.
 5. Confirm the page can recover to a new Ready state after reload.
-
-## Durable verification QA
-
-1. Run `npm test`.
-2. Confirm the proof classifier accepts only matching model, effort, completion status, and `end_turn`.
-3. Confirm mismatched, incomplete, ambiguous, stale-branch, and cyclic mappings fail.
-4. Confirm no verification state adds visible content to the two-option picker.
 
 [Back to the main README](../README.md)

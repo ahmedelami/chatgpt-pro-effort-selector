@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  CHATGPT_ORIGIN,
   CONVERSATION_PATH,
   PRO_MODEL_SLUG,
   RequestValidationError,
@@ -54,7 +55,7 @@ function makeBody(overrides = {}) {
 }
 
 function makePause({
-  url = `https://chatgpt.com${CONVERSATION_PATH}`,
+  url = `${CHATGPT_ORIGIN}${CONVERSATION_PATH}`,
   method = "POST",
   resourceType = "Fetch",
   body = makeBody(),
@@ -139,7 +140,27 @@ test("qualifies only the exact POST pathname and allowed resource type", () => {
         resourceType: "XHR"
       })
     ),
-    true
+    false
+  );
+
+  assert.equal(
+    isQualifyingConversationPause(
+      makePause({
+        url:
+          "http://chatgpt.com/backend-api/f/conversation"
+      })
+    ),
+    false
+  );
+
+  assert.equal(
+    isQualifyingConversationPause(
+      makePause({
+        url:
+          "https://subdomain.chatgpt.com/backend-api/f/conversation"
+      })
+    ),
+    false
   );
 });
 

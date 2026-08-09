@@ -1,14 +1,11 @@
 import {
+  CHATGPT_ORIGIN,
   CONVERSATION_PATH,
   RequestValidationError,
   inspectPausedRequest,
   isQualifyingConversationPause,
   prepareExtendedContinuation
 } from "../core/request-core.mjs";
-import {
-  VerificationError,
-  verifyRedactedConversationSnapshot
-} from "../core/verification-core.mjs";
 import {
   classifyLostOperation,
   decideActiveSessionNavigation,
@@ -18,8 +15,6 @@ import {
 
 const MESSAGE_SOURCE = "chatgpt-pro-effort-selector";
 const DEBUGGER_PROTOCOL_VERSION = "1.3";
-const CHATGPT_ORIGIN = "https://chatgpt.com";
-
 const CAPTURE_TIMEOUT_MS = 10_000;
 const DUPLICATE_SETTLE_MS = 75;
 const CLEANUP_RETRY_MS = 750;
@@ -36,12 +31,12 @@ const TEMPORARY_CONVERSATION_PATH_RE =
 
 const FETCH_PATTERNS = Object.freeze([
   Object.freeze({
-    urlPattern: "*://*/backend-api/f/conversation*",
+    urlPattern: "https://chatgpt.com/backend-api/f/conversation*",
     resourceType: "XHR",
     requestStage: "Request"
   }),
   Object.freeze({
-    urlPattern: "*://*/backend-api/f/conversation*",
+    urlPattern: "https://chatgpt.com/backend-api/f/conversation*",
     resourceType: "Fetch",
     requestStage: "Request"
   })
@@ -162,35 +157,6 @@ function tabsSendMessage(
       tabId,
       message,
       callback
-    );
-  });
-}
-
-function executeMainWorldScript(tabId, func, args) {
-  return new Promise((resolve, reject) => {
-    chrome.scripting.executeScript(
-      {
-        target: {
-          tabId,
-          allFrames: false
-        },
-        world: "MAIN",
-        injectImmediately: true,
-        func,
-        args
-      },
-      (results) => {
-        const error = chrome.runtime.lastError;
-
-        if (error) {
-          reject(
-            new Error("main_world_execution_failed")
-          );
-          return;
-        }
-
-        resolve(results);
-      }
     );
   });
 }
@@ -569,7 +535,7 @@ function statusMessageFor(code, status) {
       "Chrome detached or lost one-shot state after the normal UI action " +
       "had begun. The extension cannot honestly prove whether Chrome " +
       "released an untouched request. Treat the result as blocked or " +
-      "uncertain and use Verify only if a submitted message id is available."
+      "uncertain; do not rely on it as proof of Extended."
     );
   }
 
@@ -578,16 +544,16 @@ function statusMessageFor(code, status) {
       cleanup_failed:
         "The request was sent as Extended, but complete interception cleanup was not confirmed. Do not open DevTools until Chrome's debugger indication disappears.",
       duplicate_qualifying_request:
-        "One request was already sent as Extended and a later duplicate qualifying pause was blocked. Verify the saved response before relying on it.",
+        "One request was already sent as Extended and a later duplicate qualifying pause was blocked. Repeat the send without a warning before relying on it.",
       debugger_detached:
-        "The request had already been continued as Extended when Chrome detached the debugger. Durable verification is still required.",
+        "The request had already been continued as Extended when Chrome detached the debugger, but complete cleanup was not confirmed.",
       worker_state_lost_after_send:
-        "The request had already been continued as Extended before service-worker state was lost. Durable verification is still required."
+        "The request had already been continued as Extended before service-worker state was lost, but complete cleanup was not confirmed."
     };
 
     return (
       sentWarnings[code] ??
-      "The request was sent as Extended, but a debugger cleanup warning remains. Durable verification is required."
+      "The request was sent as Extended, but a debugger cleanup warning remains. Repeat the send without a warning before relying on it."
     );
   }
 
@@ -636,20 +602,7 @@ function publicStateFromAudit(audit) {
       label: "Ready",
       message:
         "Extended will arm immediately before the next normal Pro submission.",
-      canVerify: false,
       submittedUserMessageId: null
-    };
-  }
-
-  if (audit.status === "verified") {
-    return {
-      phase: "verified",
-      label: "Verified Extended",
-      message:
-        "The saved active-branch assistant metadata reports Pro, Extended, finished_successfully, and end_turn true.",
-      canVerify: true,
-      submittedUserMessageId:
-        audit.submittedUserMessageId
     };
   }
 
@@ -658,8 +611,7 @@ function publicStateFromAudit(audit) {
       phase: "sent",
       label: "Sent as Extended",
       message:
-        "The fresh paused Pro request was continued with Extended effort. Use Verify after the saved response finishes.",
-      canVerify: true,
+        "The fresh paused Pro request was continued with Extended effort.",
       submittedUserMessageId:
         audit.submittedUserMessageId
     };
@@ -673,8 +625,6 @@ function publicStateFromAudit(audit) {
         audit.error,
         audit.status
       ),
-      canVerify:
-        typeof audit.submittedUserMessageId === "string",
       submittedUserMessageId:
         audit.submittedUserMessageId
     };
@@ -688,8 +638,6 @@ function publicStateFromAudit(audit) {
         audit.error,
         audit.status
       ),
-      canVerify:
-        typeof audit.submittedUserMessageId === "string",
       submittedUserMessageId:
         audit.submittedUserMessageId
     };
@@ -702,7 +650,6 @@ function publicStateFromAudit(audit) {
       audit.error,
       "failed"
     ),
-    canVerify: false,
     submittedUserMessageId:
       audit.submittedUserMessageId
   };
@@ -1163,6 +1110,7 @@ async function finalizeFailedSession(
   }
 
   session.finalizing = true;
+  session.candidateEvent = null;
   clearSessionTimers(session);
 
   if (
@@ -1211,16 +1159,11 @@ async function finalizeFailedSession(
   const detachComplete =
     detachRequested || session.detached;
 
-  const hasSubmittedUserMessageId =
-    typeof session.audit?.submittedUserMessageId ===
-      "string";
-
   const classification = classifyLostOperation({
     requestContinued: session.requestContinued,
     pausedRequestCount:
       session.qualifyingRequestIds.size,
     abortSucceeded: allAbortsSucceeded,
-    hasSubmittedUserMessageId,
     replayAuthorized: session.replayAuthorized,
     replayCancelled:
       code === "replay_cancelled"
@@ -1228,8 +1171,6 @@ async function finalizeFailedSession(
 
   let status = classification.status;
   let error = classification.error;
-  const canVerify = classification.canVerify;
-
   if (
     status === "failed" ||
     status === "sent_warning"
@@ -1260,14 +1201,10 @@ async function finalizeFailedSession(
 
   await persistRequired();
 
-  const publicState =
-    publicStateFromAudit(audit);
-
-  await notifySession(session, {
-    ...publicState,
-    canVerify:
-      publicState.canVerify && canVerify
-  });
+  await notifySession(
+    session,
+    publicStateFromAudit(audit)
+  );
 }
 
 async function completeSentSession(session) {
@@ -1497,6 +1434,49 @@ async function armExtended(sender) {
       code: "state_store_failed",
       message: statusMessageFor(
         "state_store_failed",
+        "failed"
+      )
+    };
+  }
+
+  try {
+    const currentTab = await tabsGet(tabId);
+    const currentUrls = [
+      currentTab.url,
+      currentTab.pendingUrl
+    ].filter(
+      (value) =>
+        typeof value === "string" &&
+        value.length > 0
+    );
+
+    if (currentUrls.length === 0) {
+      throw new Error("tab_url_unavailable");
+    }
+
+    for (const currentUrl of currentUrls) {
+      const currentParsedUrl =
+        parseAllowedChatgptUrl(currentUrl);
+
+      if (
+        !currentParsedUrl ||
+        currentParsedUrl.pathname !==
+          session.pagePath
+      ) {
+        throw new Error("tab_navigated");
+      }
+    }
+  } catch {
+    await finalizeFailedSession(
+      session,
+      "navigation"
+    );
+
+    return {
+      ok: false,
+      code: "navigation",
+      message: statusMessageFor(
+        "navigation",
         "failed"
       )
     };
@@ -1870,11 +1850,14 @@ async function processCandidate(session) {
     return;
   }
 
+  let candidateEvent =
+    session.candidateEvent;
+  session.candidateEvent = null;
   let continuation;
 
   try {
     continuation = prepareExtendedContinuation(
-      session.candidateEvent
+      candidateEvent
     );
   } catch (error) {
     const code =
@@ -1885,7 +1868,7 @@ async function processCandidate(session) {
 
     try {
       const identity = inspectPausedRequest(
-        session.candidateEvent
+        candidateEvent
       );
 
       session.audit = {
@@ -1904,12 +1887,16 @@ async function processCandidate(session) {
       session.audit = null;
     }
 
+    candidateEvent = null;
+
     await finalizeFailedSession(
       session,
       code
     );
     return;
   }
+
+  candidateEvent = null;
 
   session.audit = {
     ...continuation.audit,
@@ -1925,6 +1912,7 @@ async function processCandidate(session) {
    * copied into storage.session.
    */
   if (!(await persistRequired())) {
+    continuation = null;
     await finalizeFailedSession(
       session,
       "state_store_failed"
@@ -1937,6 +1925,7 @@ async function processCandidate(session) {
     activeSessions.get(session.tabId) !== session ||
     session.qualifyingCount !== 1
   ) {
+    continuation = null;
     return;
   }
 
@@ -1951,6 +1940,8 @@ async function processCandidate(session) {
       }
     );
 
+    continuation = null;
+
     session.requestContinued = true;
     session.phase = transitionPhase(
       session.phase,
@@ -1959,6 +1950,7 @@ async function processCandidate(session) {
     session.audit.status = "sent";
     session.audit.error = null;
   } catch {
+    continuation = null;
     await finalizeFailedSession(
       session,
       "cdp_failure"
@@ -2209,15 +2201,10 @@ async function reconcileStaleActiveRecord(record) {
   const previousAudit =
     runtimeState.audits[String(record.tabId)];
 
-  const hasSubmittedUserMessageId =
-    typeof previousAudit?.submittedUserMessageId ===
-    "string";
-
   const classification =
     previousAudit?.status === "uncertain"
       ? {
           status: "uncertain",
-          canVerify: hasSubmittedUserMessageId,
           error: "outcome_uncertain"
         }
       : classifyLostOperation({
@@ -2225,7 +2212,6 @@ async function reconcileStaleActiveRecord(record) {
           pausedRequestCount:
             record.pausedRequestIds.length,
           abortSucceeded: allAbortsSucceeded,
-          hasSubmittedUserMessageId,
           replayAuthorized:
             record.replayAuthorized === true
         });
@@ -2280,595 +2266,6 @@ async function initializeRuntimeState() {
   }
 
   await persistRequired();
-}
-
-async function fetchRedactedTurnProofInMainWorld(
-  expectedUserMessageId
-) {
-  /*
-   * This function is serialized by chrome.scripting and runs in ChatGPT's
-   * MAIN world. It is intentionally self-contained and must not reference
-   * any outer service-worker variables.
-   */
-  const uuidPathPattern =
-    /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-  const maxTraversalNodes = 20_000;
-  const maxReturnedTurnNodes = 256;
-
-  const hasOwn = (value, propertyName) =>
-    Object.prototype.hasOwnProperty.call(
-      value,
-      propertyName
-    );
-
-  const normalizeMarker = (value) =>
-    typeof value === "string"
-      ? value.trim().toLowerCase()
-      : "";
-
-  const getMessage = (node) =>
-    node?.message &&
-    typeof node.message === "object" &&
-    !Array.isArray(node.message)
-      ? node.message
-      : {};
-
-  const getRole = (node) => {
-    const role = getMessage(node)?.author?.role;
-    return typeof role === "string" ? role : "";
-  };
-
-  const getMessageId = (nodeId, node) => {
-    const messageId = getMessage(node).id;
-
-    if (
-      typeof messageId === "string" &&
-      messageId.length > 0
-    ) {
-      return messageId;
-    }
-
-    return nodeId;
-  };
-
-  const isIgnored = (node) => {
-    const message = getMessage(node);
-    const metadata =
-      message.metadata &&
-      typeof message.metadata === "object" &&
-      !Array.isArray(message.metadata)
-        ? message.metadata
-        : {};
-    const content =
-      message.content &&
-      typeof message.content === "object" &&
-      !Array.isArray(message.content)
-        ? message.content
-        : {};
-
-    const markers = [
-      node?.type,
-      message.type,
-      content.content_type,
-      metadata.type,
-      metadata.message_type,
-      metadata.content_type
-    ].map(normalizeMarker);
-
-    return (
-      markers.includes("reasoning_recap") ||
-      markers.includes("model_editable_context")
-    );
-  };
-
-  if (location.origin !== "https://chatgpt.com") {
-    return {
-      ok: false,
-      code: "wrong_origin",
-      message:
-        "Durable verification can only run on chatgpt.com."
-    };
-  }
-
-  const pathMatch =
-    location.pathname.match(uuidPathPattern);
-
-  if (!pathMatch) {
-    return {
-      ok: false,
-      code: "not_canonical_conversation",
-      message:
-        "Open the canonical /c/<lowercase UUID> saved conversation URL before verifying."
-    };
-  }
-
-  if (
-    typeof expectedUserMessageId !== "string" ||
-    expectedUserMessageId.trim().length === 0
-  ) {
-    return {
-      ok: false,
-      code: "missing_submitted_user_message_id",
-      message:
-        "The in-memory submitted user message id is unavailable."
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `/backend-api/conversation/${pathMatch[1]}`,
-      {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-        headers: {
-          accept: "application/json"
-        }
-      }
-    );
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        code: "durable_fetch_failed",
-        message:
-          `The durable conversation GET returned HTTP ${response.status}.`
-      };
-    }
-
-    const snapshot = await response.json();
-
-    if (
-      !snapshot ||
-      typeof snapshot !== "object" ||
-      Array.isArray(snapshot) ||
-      !snapshot.mapping ||
-      typeof snapshot.mapping !== "object" ||
-      Array.isArray(snapshot.mapping) ||
-      typeof snapshot.current_node !== "string" ||
-      snapshot.current_node.length === 0
-    ) {
-      return {
-        ok: false,
-        code: "invalid_durable_snapshot",
-        message:
-          "The durable conversation response did not match the expected mapping schema."
-      };
-    }
-
-    const reversePath = [];
-    const visited = new Set();
-    let cursor = snapshot.current_node;
-    let targetFound = false;
-
-    while (
-      typeof cursor === "string" &&
-      cursor.length > 0 &&
-      hasOwn(snapshot.mapping, cursor)
-    ) {
-      if (visited.has(cursor)) {
-        return {
-          ok: false,
-          code: "durable_mapping_cycle",
-          message:
-            "The durable conversation mapping contained a cycle."
-        };
-      }
-
-      if (visited.size >= maxTraversalNodes) {
-        return {
-          ok: false,
-          code: "durable_mapping_too_large",
-          message:
-            "The active durable branch exceeded the verification traversal limit."
-        };
-      }
-
-      visited.add(cursor);
-
-      const node = snapshot.mapping[cursor];
-
-      if (
-        !node ||
-        typeof node !== "object" ||
-        Array.isArray(node)
-      ) {
-        return {
-          ok: false,
-          code: "invalid_durable_node",
-          message:
-            "The durable conversation mapping contained an invalid node."
-        };
-      }
-
-      reversePath.push({
-        nodeId: cursor,
-        node
-      });
-
-      if (
-        !isIgnored(node) &&
-        getRole(node) === "user" &&
-        getMessageId(cursor, node) ===
-          expectedUserMessageId
-      ) {
-        targetFound = true;
-        break;
-      }
-
-      cursor =
-        typeof node.parent === "string"
-          ? node.parent
-          : "";
-    }
-
-    if (!targetFound) {
-      return {
-        ok: false,
-        code: "user_not_on_active_branch",
-        message:
-          "The submitted user message was not found on the active saved branch."
-      };
-    }
-
-    const forwardPath = reversePath.reverse();
-    let turnEnd = forwardPath.length;
-
-    for (
-      let index = 1;
-      index < forwardPath.length;
-      index += 1
-    ) {
-      const { node } = forwardPath[index];
-
-      if (
-        !isIgnored(node) &&
-        getRole(node) === "user"
-      ) {
-        turnEnd = index;
-        break;
-      }
-    }
-
-    const turnPath = forwardPath.slice(0, turnEnd);
-
-    if (turnPath.length > maxReturnedTurnNodes) {
-      return {
-        ok: false,
-        code: "turn_proof_too_large",
-        message:
-          "The correlated turn exceeded the redacted verification limit."
-      };
-    }
-
-    const redactedMapping = {};
-
-    for (
-      let index = 0;
-      index < turnPath.length;
-      index += 1
-    ) {
-      const { nodeId, node } = turnPath[index];
-      const message = getMessage(node);
-      const author =
-        message.author &&
-        typeof message.author === "object" &&
-        !Array.isArray(message.author)
-          ? message.author
-          : {};
-      const content =
-        message.content &&
-        typeof message.content === "object" &&
-        !Array.isArray(message.content)
-          ? message.content
-          : {};
-      const metadata =
-        message.metadata &&
-        typeof message.metadata === "object" &&
-        !Array.isArray(message.metadata)
-          ? message.metadata
-          : {};
-
-      redactedMapping[nodeId] = {
-        id:
-          typeof node.id === "string"
-            ? node.id
-            : nodeId,
-        parent:
-          index === 0
-            ? null
-            : turnPath[index - 1].nodeId,
-        type:
-          typeof node.type === "string"
-            ? node.type
-            : null,
-        message: {
-          id:
-            typeof message.id === "string"
-              ? message.id
-              : nodeId,
-          type:
-            typeof message.type === "string"
-              ? message.type
-              : null,
-          author: {
-            role:
-              typeof author.role === "string"
-                ? author.role
-                : null
-          },
-          content: {
-            content_type:
-              typeof content.content_type === "string"
-                ? content.content_type
-                : null
-          },
-          metadata: {
-            model_slug:
-              typeof metadata.model_slug === "string"
-                ? metadata.model_slug
-                : null,
-            thinking_effort:
-              typeof metadata.thinking_effort ===
-              "string"
-                ? metadata.thinking_effort
-                : null,
-            type:
-              typeof metadata.type === "string"
-                ? metadata.type
-                : null,
-            message_type:
-              typeof metadata.message_type ===
-              "string"
-                ? metadata.message_type
-                : null,
-            content_type:
-              typeof metadata.content_type ===
-              "string"
-                ? metadata.content_type
-                : null
-          },
-          status:
-            typeof message.status === "string"
-              ? message.status
-              : null,
-          end_turn: message.end_turn === true
-        }
-      };
-    }
-
-    return {
-      ok: true,
-      snapshot: {
-        current_node:
-          turnPath[turnPath.length - 1].nodeId,
-        mapping: redactedMapping
-      }
-    };
-  } catch {
-    return {
-      ok: false,
-      code: "durable_fetch_exception",
-      message:
-        "The same-origin durable conversation request could not be completed."
-    };
-  }
-}
-
-async function verifyExtended(sender, message) {
-  const tabId = sender.tab?.id;
-
-  if (
-    !Number.isInteger(tabId) ||
-    sender.frameId !== 0
-  ) {
-    return {
-      ok: false,
-      code: "invalid_sender",
-      message:
-        "Verification can only run in the top-level ChatGPT tab."
-    };
-  }
-
-  const active = activeSessions.get(tabId);
-
-  if (active) {
-    const cleanupPending =
-      active.requestContinued === true;
-
-    return {
-      ok: false,
-      code: cleanupPending
-        ? "cleanup_pending"
-        : "operation_active",
-      message: cleanupPending
-        ? (
-            "Debugger cleanup is still active. Wait until Chrome's " +
-            "debugger indication disappears before durable verification."
-          )
-        : (
-            "Wait for the active Extended submission to finish before " +
-            "verifying."
-          )
-    };
-  }
-
-  const audit =
-    runtimeState.audits[String(tabId)];
-
-  if (
-    !audit ||
-    ![
-      "sent",
-      "sent_warning",
-      "uncertain",
-      "verified"
-    ].includes(audit.status) ||
-    typeof audit.submittedUserMessageId !== "string"
-  ) {
-    return {
-      ok: false,
-      code: "no_verifiable_send",
-      message:
-        "There is no in-memory Sent as Extended operation with a submitted user message id to verify."
-    };
-  }
-
-  if (
-    typeof message.generationId === "string" &&
-    audit.generationId !== message.generationId
-  ) {
-    return {
-      ok: false,
-      code: "stale_generation",
-      message:
-        "The requested verification generation is no longer current."
-    };
-  }
-
-  if (audit.status === "verified") {
-    return {
-      ok: true,
-      code: "verified_extended",
-      message: "Verified Extended",
-      submittedUserMessageId:
-        audit.submittedUserMessageId
-    };
-  }
-
-  let tab;
-
-  try {
-    tab = await tabsGet(tabId);
-  } catch {
-    return {
-      ok: false,
-      code: "tab_lookup_failed",
-      message:
-        "The ChatGPT tab could not be inspected for verification."
-    };
-  }
-
-  const parsedUrl = parseAllowedChatgptUrl(tab.url);
-
-  if (
-    !parsedUrl ||
-    !CONVERSATION_UUID_PATH_RE.test(
-      parsedUrl.pathname
-    )
-  ) {
-    return {
-      ok: false,
-      code: "not_canonical_conversation",
-      message:
-        "Open the canonical https://chatgpt.com/c/<lowercase UUID> saved conversation before verifying."
-    };
-  }
-
-  let executionResults;
-
-  try {
-    executionResults = await executeMainWorldScript(
-      tabId,
-      fetchRedactedTurnProofInMainWorld,
-      [audit.submittedUserMessageId]
-    );
-  } catch {
-    return {
-      ok: false,
-      code: "verification_execution_failed",
-      message:
-        "The local same-origin verification helper could not run. The state remains Sent as Extended."
-    };
-  }
-
-  const pageResult =
-    Array.isArray(executionResults) &&
-    executionResults.length === 1
-      ? executionResults[0]?.result
-      : null;
-
-  if (
-    !pageResult ||
-    typeof pageResult !== "object" ||
-    Array.isArray(pageResult)
-  ) {
-    return {
-      ok: false,
-      code: "invalid_verification_result",
-      message:
-        "Verification returned no valid redacted result. The state remains Sent as Extended."
-    };
-  }
-
-  if (pageResult.ok !== true) {
-    return {
-      ok: false,
-      code:
-        typeof pageResult.code === "string"
-          ? pageResult.code
-          : "durable_verification_unavailable",
-      message:
-        typeof pageResult.message === "string"
-          ? pageResult.message
-          : "Durable verification was unavailable.",
-      submittedUserMessageId:
-        audit.submittedUserMessageId
-    };
-  }
-
-  let proof;
-
-  try {
-    proof = verifyRedactedConversationSnapshot(
-      pageResult.snapshot,
-      audit.submittedUserMessageId
-    );
-  } catch (error) {
-    return {
-      ok: false,
-      code:
-        error instanceof VerificationError
-          ? error.code
-          : "verification_schema_failed",
-      message:
-        "The redacted durable metadata did not match the expected verification schema.",
-      submittedUserMessageId:
-        audit.submittedUserMessageId
-    };
-  }
-
-  if (!proof.ok) {
-    return {
-      ...proof,
-      submittedUserMessageId:
-        audit.submittedUserMessageId
-    };
-  }
-
-  audit.status = "verified";
-  audit.error = null;
-  setAudit(tabId, audit);
-  await persistRequired();
-
-  await notifyTab(
-    tabId,
-    {
-      generationId: audit.generationId,
-      ...publicStateFromAudit(audit)
-    },
-    typeof sender.documentId === "string"
-      ? sender.documentId
-      : null
-  );
-
-  return {
-    ok: true,
-    code: proof.code,
-    message: proof.message,
-    submittedUserMessageId:
-      audit.submittedUserMessageId
-  };
 }
 
 function getTabState(sender) {
@@ -2926,7 +2323,6 @@ function getTabState(sender) {
       label: "Arming",
       message:
         "Chrome is waiting for exactly one fresh Pro conversation POST.",
-      canVerify: false,
       submittedUserMessageId:
         session.audit?.submittedUserMessageId ?? null
     };
@@ -2982,9 +2378,6 @@ async function handleRuntimeMessage(
 
     case "cancelArm":
       return cancelArm(sender, message);
-
-    case "verifyExtended":
-      return verifyExtended(sender, message);
 
     case "getState":
       return getTabState(sender);

@@ -404,6 +404,32 @@ test("restores only a fresh generation-scoped pending draft adoption", () => {
     "a pending generation must never adopt a preexisting chat"
   );
   assert.equal(
+    storage.getItem(
+      DRAFT_PENDING_SESSION_STORAGE_KEY
+    ),
+    null,
+    "route-mismatched recovery evidence must be removed from session storage"
+  );
+
+  assert.deepEqual(
+    persistPendingDraftAdoptionToSessionStorage(
+      storage,
+      {
+        sourceRoute: blank,
+        temporaryRoute: temporary,
+        targetRoute: savedA,
+        generationId,
+        draftMode: EXTENDED,
+        createdAt,
+        preexistingConversationKeys: [
+          savedB.storageKey
+        ]
+      }
+    ),
+    record
+  );
+
+  assert.equal(
     readPendingDraftAdoptionFromSessionStorage(
       storage,
       temporary,
@@ -412,11 +438,17 @@ test("restores only a fresh generation-scoped pending draft adoption", () => {
     null,
     "stale recovery evidence must expire"
   );
+  assert.equal(
+    storage.getItem(
+      DRAFT_PENDING_SESSION_STORAGE_KEY
+    ),
+    null,
+    "expired recovery evidence must be removed from session storage"
+  );
 
   for (const phase of [
     "sent",
-    "warning",
-    "verified"
+    "warning"
   ]) {
     assert.equal(
       shouldRestorePendingDraftAdoption(

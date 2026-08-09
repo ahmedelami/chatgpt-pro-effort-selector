@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280" fill="none">
+  <rect width="440" height="280" fill="#000"/>
+  <rect data-effort-bar="true" x="190" y="126" width="20" height="44" rx="10" fill="#FFF"/>
+  <rect data-effort-bar="true" x="230" y="101" width="20" height="69" rx="10" fill="#FFF"/>
+</svg>

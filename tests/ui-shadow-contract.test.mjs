@@ -21,6 +21,13 @@ const contentScript = await readFile(
   ),
   "utf8"
 );
+const serviceWorker = await readFile(
+  new URL(
+    "../background/service-worker.mjs",
+    import.meta.url
+  ),
+  "utf8"
+);
 const shadowUi = await readFile(
   new URL(
     "../content/shadow-ui.js",
@@ -52,6 +59,21 @@ test("loads the shadow UI helper before the content script", () => {
   assert.deepEqual(
     manifest.content_scripts[0].css,
     ["content/styles.css"]
+  );
+});
+
+test("does not request scripting for the removed verifier", () => {
+  assert.equal(
+    manifest.permissions.includes("scripting"),
+    false
+  );
+  assert.doesNotMatch(
+    serviceWorker,
+    /chrome\.scripting/
+  );
+  assert.doesNotMatch(
+    contentScript,
+    /verifyExtended/
   );
 });
 

@@ -60,13 +60,9 @@ const TRANSITIONS = Object.freeze({
     warning: "sent_warning"
   }),
   sent_warning: Object.freeze({
-    cleaned: "complete",
-    verified: "verified"
+    cleaned: "complete"
   }),
-  complete: Object.freeze({
-    verified: "verified"
-  }),
-  verified: Object.freeze({}),
+  complete: Object.freeze({}),
   failed: Object.freeze({})
 });
 
@@ -195,14 +191,12 @@ export function classifyLostOperation({
   requestContinued,
   pausedRequestCount,
   abortSucceeded,
-  hasSubmittedUserMessageId,
   replayAuthorized = false,
   replayCancelled = false
 }) {
   if (requestContinued) {
     return {
       status: "sent_warning",
-      canVerify: hasSubmittedUserMessageId,
       error: "worker_state_lost_after_send"
     };
   }
@@ -210,7 +204,6 @@ export function classifyLostOperation({
   if (pausedRequestCount > 0 && !abortSucceeded) {
     return {
       status: "uncertain",
-      canVerify: hasSubmittedUserMessageId,
       error: "outcome_uncertain"
     };
   }
@@ -218,14 +211,12 @@ export function classifyLostOperation({
   if (replayAuthorized && !replayCancelled) {
     return {
       status: "uncertain",
-      canVerify: hasSubmittedUserMessageId,
       error: "outcome_uncertain"
     };
   }
 
   return {
     status: "failed",
-    canVerify: false,
     error: "worker_state_lost"
   };
 }

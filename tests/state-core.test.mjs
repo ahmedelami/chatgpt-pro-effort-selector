@@ -59,12 +59,6 @@ test("models the successful one-shot lifecycle", () => {
     "cleaned"
   );
   assert.equal(phase, "complete");
-
-  phase = transitionPhase(
-    phase,
-    "verified"
-  );
-  assert.equal(phase, "verified");
 });
 
 test("allows all pre-send active phases to fail closed", () => {
@@ -131,7 +125,6 @@ test("identifies only pre-send debugger-active phases", () => {
     "cleaning",
     "sent_warning",
     "complete",
-    "verified",
     "failed"
   ]) {
     assert.equal(
@@ -449,12 +442,10 @@ test("classifies service-worker loss after a known continued request as sent war
     classifyLostOperation({
       requestContinued: true,
       pausedRequestCount: 0,
-      abortSucceeded: false,
-      hasSubmittedUserMessageId: true
+      abortSucceeded: false
     }),
     {
       status: "sent_warning",
-      canVerify: true,
       error: "worker_state_lost_after_send"
     }
   );
@@ -466,12 +457,10 @@ test("classifies state loss after replay authorization but before a pause as unc
       requestContinued: false,
       pausedRequestCount: 0,
       abortSucceeded: true,
-      hasSubmittedUserMessageId: false,
       replayAuthorized: true
     }),
     {
       status: "uncertain",
-      canVerify: false,
       error: "outcome_uncertain"
     }
   );
@@ -483,13 +472,11 @@ test("an explicitly cancelled replay remains a definite failure", () => {
       requestContinued: false,
       pausedRequestCount: 0,
       abortSucceeded: true,
-      hasSubmittedUserMessageId: false,
       replayAuthorized: true,
       replayCancelled: true
     }),
     {
       status: "failed",
-      canVerify: false,
       error: "worker_state_lost"
     }
   );
@@ -500,12 +487,10 @@ test("classifies an unabortable retained paused request as uncertain", () => {
     classifyLostOperation({
       requestContinued: false,
       pausedRequestCount: 1,
-      abortSucceeded: false,
-      hasSubmittedUserMessageId: true
+      abortSucceeded: false
     }),
     {
       status: "uncertain",
-      canVerify: true,
       error: "outcome_uncertain"
     }
   );
@@ -516,12 +501,10 @@ test("classifies a pre-send stale arm with no escaped request as failed", () => 
     classifyLostOperation({
       requestContinued: false,
       pausedRequestCount: 1,
-      abortSucceeded: true,
-      hasSubmittedUserMessageId: true
+      abortSucceeded: true
     }),
     {
       status: "failed",
-      canVerify: false,
       error: "worker_state_lost"
     }
   );
@@ -530,12 +513,10 @@ test("classifies a pre-send stale arm with no escaped request as failed", () => 
     classifyLostOperation({
       requestContinued: false,
       pausedRequestCount: 0,
-      abortSucceeded: true,
-      hasSubmittedUserMessageId: false
+      abortSucceeded: true
     }),
     {
       status: "failed",
-      canVerify: false,
       error: "worker_state_lost"
     }
   );

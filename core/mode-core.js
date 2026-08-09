@@ -503,17 +503,31 @@
         !Number.isFinite(now) ||
         now < record.createdAt ||
         now - record.createdAt >
-          PENDING_DRAFT_MAX_AGE_MS ||
+          PENDING_DRAFT_MAX_AGE_MS
+      ) {
+        clearPendingDraftAdoptionFromSessionStorage(
+          storage
+        );
+        return null;
+      }
+
+      if (
         !pendingRecordMatchesRoute(
           record,
           route
         )
       ) {
+        clearPendingDraftAdoptionFromSessionStorage(
+          storage
+        );
         return null;
       }
 
       return record;
     } catch {
+      clearPendingDraftAdoptionFromSessionStorage(
+        storage
+      );
       return null;
     }
   }
@@ -546,8 +560,7 @@
         pending.generationId &&
       [
         "sent",
-        "warning",
-        "verified"
+        "warning"
       ].includes(backgroundState.phase) &&
       typeof backgroundState
         .submittedUserMessageId ===
@@ -881,6 +894,7 @@
       DRAFT_SESSION_STORAGE_KEY,
       DRAFT_BINDING_SESSION_STORAGE_KEY,
       DRAFT_PENDING_SESSION_STORAGE_KEY,
+      PENDING_DRAFT_MAX_AGE_MS,
       normalizeMode,
       storageKeyForConversationId,
       readDraftModeFromSessionStorage,

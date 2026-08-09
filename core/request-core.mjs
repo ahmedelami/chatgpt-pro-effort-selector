@@ -1,4 +1,5 @@
 export const CONVERSATION_PATH = "/backend-api/f/conversation";
+export const CHATGPT_ORIGIN = "https://chatgpt.com";
 export const PRO_MODEL_SLUG = "gpt-5-6-pro";
 export const EXTENDED_EFFORT = "extended";
 export const FORCED_CLIENT_PREPARE_STATE = "none";
@@ -77,6 +78,7 @@ export function inspectPausedRequest(pausedEvent) {
 
   return {
     method,
+    origin: parsedUrl.origin,
     path: parsedUrl.pathname,
     resourceType,
     requestId:
@@ -92,6 +94,7 @@ export function isQualifyingConversationPause(pausedEvent) {
 
     return (
       identity.method === "POST" &&
+      identity.origin === CHATGPT_ORIGIN &&
       identity.path === CONVERSATION_PATH &&
       ALLOWED_RESOURCE_TYPES.has(identity.resourceType)
     );

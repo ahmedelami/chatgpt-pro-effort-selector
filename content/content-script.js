@@ -10,6 +10,7 @@
   const {
     STANDARD,
     EXTENDED,
+    PENDING_DRAFT_MAX_AGE_MS,
     normalizeMode,
     parseChatRoute,
     sameChatRoute,
@@ -115,11 +116,17 @@
           activeRoute
         )
       : null;
+  let pendingDraftStorageExpiryTimer =
+    null;
   let pendingDraftAdoptionRecord =
     readPendingDraftAdoptionFromSessionStorage(
       draftSessionStorage,
       activeRoute
     );
+
+  schedulePendingDraftStorageExpiry(
+    pendingDraftAdoptionRecord
+  );
 
   if (
     activeRoute.kind === "draft" &&
@@ -168,9 +175,7 @@
   let viewState = {
     kind: "standard",
     label: "Standard",
-    message: "ChatGPT requests are left untouched.",
-    canVerify: false,
-    submittedUserMessageId: null
+    message: "ChatGPT requests are left untouched."
   };
 
   function runtimeSend(message) {
@@ -1902,9 +1907,7 @@
         kind: "ready",
         label: "Extended",
         message:
-          getExtendedReadyMessage(),
-        canVerify: false,
-        submittedUserMessageId: null
+          getExtendedReadyMessage()
       });
       return;
     }
@@ -1917,9 +1920,7 @@
           activeRoute
         )
           ? "ChatGPT requests in this chat are left untouched."
-          : "New-chat requests are left untouched.",
-      canVerify: false,
-      submittedUserMessageId: null
+          : "New-chat requests are left untouched."
     });
   }
 
@@ -1955,7 +1956,6 @@
     return [
       "sent",
       "warning",
-      "verified",
       "failed"
     ].includes(phase);
   }
@@ -1997,10 +1997,68 @@
   }
 
   function clearPendingDraftAdoption() {
+    if (
+      pendingDraftStorageExpiryTimer !==
+      null
+    ) {
+      window.clearTimeout(
+        pendingDraftStorageExpiryTimer
+      );
+      pendingDraftStorageExpiryTimer =
+        null;
+    }
+
     pendingDraftAdoptionRecord =
       clearPendingDraftAdoptionFromSessionStorage(
         draftSessionStorage
       );
+  }
+
+  function schedulePendingDraftStorageExpiry(
+    record
+  ) {
+    if (
+      pendingDraftStorageExpiryTimer !==
+      null
+    ) {
+      window.clearTimeout(
+        pendingDraftStorageExpiryTimer
+      );
+      pendingDraftStorageExpiryTimer =
+        null;
+    }
+
+    if (
+      !record ||
+      !Number.isFinite(record.createdAt) ||
+      typeof record.generationId !==
+        "string"
+    ) {
+      return;
+    }
+
+    const generationId =
+      record.generationId;
+    const delay = Math.max(
+      0,
+      record.createdAt +
+        PENDING_DRAFT_MAX_AGE_MS -
+        Date.now()
+    );
+
+    pendingDraftStorageExpiryTimer =
+      window.setTimeout(() => {
+        pendingDraftStorageExpiryTimer =
+          null;
+
+        if (
+          pendingDraftAdoptionRecord
+            ?.generationId ===
+          generationId
+        ) {
+          clearPendingDraftAdoption();
+        }
+      }, delay);
   }
 
   function persistPendingDraftAdoption(
@@ -2041,6 +2099,10 @@
           ]
         }
       );
+
+    schedulePendingDraftStorageExpiry(
+      pendingDraftAdoptionRecord
+    );
 
     return pendingDraftAdoptionRecord;
   }
@@ -2087,6 +2149,10 @@
               .preexistingConversationKeys
         }
       );
+
+    schedulePendingDraftStorageExpiry(
+      pendingDraftAdoptionRecord
+    );
   }
 
   function collectKnownConversationRoutes(
@@ -3423,9 +3489,7 @@
     setViewState({
       kind: "error",
       label: "Extended blocked",
-      message,
-      canVerify: false,
-      submittedUserMessageId: null
+      message
     });
 
     showToast(message, false);
@@ -3597,9 +3661,7 @@
       kind: "arming",
       label: "Arming",
       message:
-        "Attaching Chrome's fresh one-shot debugger gate for this Extended-mode submission.",
-      canVerify: false,
-      submittedUserMessageId: null
+        "Attaching Chrome's fresh one-shot debugger gate for this Extended-mode submission."
     });
 
     let armResponse;
@@ -3644,9 +3706,7 @@
       setViewState({
         kind: "error",
         label: "Extended blocked",
-        message,
-        canVerify: false,
-        submittedUserMessageId: null
+        message
       });
 
       showToast(message, false);
@@ -3724,9 +3784,7 @@
       setViewState({
         kind: "error",
         label: "Extended blocked",
-        message,
-        canVerify: false,
-        submittedUserMessageId: null
+        message
       });
 
       showToast(message, false);
@@ -3784,9 +3842,7 @@
       setViewState({
         kind: "error",
         label: "Extended blocked",
-        message,
-        canVerify: false,
-        submittedUserMessageId: null
+        message
       });
 
       showToast(message, false);
@@ -3838,9 +3894,7 @@
     setViewState({
       kind: "error",
       label: "Extended blocked",
-      message,
-      canVerify: false,
-      submittedUserMessageId: null
+      message
     });
 
     showToast(message, false);
@@ -4145,11 +4199,7 @@
         label: message.label ?? "Arming",
         message:
           message.message ??
-          "Waiting for one fresh Pro conversation POST.",
-        canVerify: false,
-        submittedUserMessageId:
-          message.submittedUserMessageId ??
-          null
+          "Waiting for one fresh Pro conversation POST."
       });
       return;
     }
@@ -4170,12 +4220,7 @@
           "Sent as Extended",
         message:
           message.message ??
-          "The fresh paused request was continued as Extended.",
-        canVerify:
-          message.canVerify === true,
-        submittedUserMessageId:
-          message.submittedUserMessageId ??
-          null
+          "The fresh paused request was continued as Extended."
       });
       return;
     }
@@ -4196,41 +4241,13 @@
           "Sent as Extended; warning",
         message:
           message.message ??
-          "The send completed with a debugger cleanup warning.",
-        canVerify:
-          message.canVerify === true,
-        submittedUserMessageId:
-          message.submittedUserMessageId ??
-          null
+          "The send completed with a debugger cleanup warning."
       });
 
       showToast(
         viewState.message,
         false
       );
-      return;
-    }
-
-    if (message.phase === "verified") {
-      markDraftSendSucceeded(
-        generationId
-      );
-    }
-
-    if (message.phase === "verified") {
-      submissionBusy = false;
-
-      setViewState({
-        kind: "verified",
-        label: "Verified Extended",
-        message:
-          message.message ??
-          "The saved response contains durable Extended proof.",
-        canVerify: true,
-        submittedUserMessageId:
-          message.submittedUserMessageId ??
-          viewState.submittedUserMessageId
-      });
       return;
     }
 
@@ -4259,12 +4276,7 @@
           "Extended blocked",
         message:
           message.message ??
-          "The Extended operation failed closed.",
-        canVerify:
-          message.canVerify === true,
-        submittedUserMessageId:
-          message.submittedUserMessageId ??
-          null
+          "The Extended operation failed closed."
       });
 
       showToast(
@@ -4279,68 +4291,6 @@
         );
       }
     }
-  }
-
-  async function verifyLatestSubmission() {
-    if (
-      submissionBusy ||
-      viewState.kind === "verifying" ||
-      !viewState.canVerify ||
-      typeof viewState.submittedUserMessageId !==
-        "string"
-    ) {
-      return;
-    }
-
-    setViewState({
-      kind: "verifying",
-      label: "Verifying",
-      message:
-        "Checking redacted metadata from the saved active conversation branch."
-    });
-
-    let response;
-
-    try {
-      response = await runtimeSend({
-        type: "verifyExtended",
-        generationId:
-          currentGenerationId
-      });
-    } catch {
-      response = {
-        ok: false,
-        message:
-          "The verification request could not reach the service worker."
-      };
-    }
-
-    if (response?.ok) {
-      setViewState({
-        kind: "verified",
-        label: "Verified Extended",
-        message:
-          response.message ??
-          "Verified Extended",
-        canVerify: true,
-        submittedUserMessageId:
-          response.submittedUserMessageId ??
-          viewState.submittedUserMessageId
-      });
-      return;
-    }
-
-    setViewState({
-      kind: "warning",
-      label: "Verification unavailable",
-      message:
-        response?.message ??
-        "Durable verification was unavailable. The send state has not been promoted to Verified Extended.",
-      canVerify: true,
-      submittedUserMessageId:
-        response?.submittedUserMessageId ??
-        viewState.submittedUserMessageId
-    });
   }
 
   async function restorePendingDraftAdoption() {
