@@ -57,6 +57,7 @@ chatgpt-pro-effort-selector/
 │   └── service-worker.mjs
 ├── content/
 │   ├── content-script.js
+│   ├── shadow-ui.js
 │   └── styles.css
 ├── core/
 │   ├── mode-core.js
@@ -67,6 +68,8 @@ chatgpt-pro-effort-selector/
     ├── mode-core.test.mjs
     ├── request-core.test.mjs
     ├── state-core.test.mjs
+    ├── ui-core.test.mjs
+    ├── ui-shadow-contract.test.mjs
     └── verification-core.test.mjs
 ```
 
@@ -422,6 +425,7 @@ From the extension root:
 
 ```bash
 node --check background/service-worker.mjs
+node --check content/shadow-ui.js
 node --check content/content-script.js
 node --check core/mode-core.js
 node --check core/request-core.mjs
@@ -699,5 +703,7 @@ This extension depends on unsupported ChatGPT internals:
 - assistant metadata fields
 
 ChatGPT can change any of these without notice.
+
+The trigger and picker use separate open Shadow DOM roots with extension-owned styles, so ordinary ChatGPT CSS changes cannot restyle their internal buttons, chevron, rows, or hover surface. The light-DOM toast remains outside that isolation. Shadow DOM is not a security boundary and does not protect the surrounding composer layout, model-control discovery, or mount-point selection from future ChatGPT DOM changes.
 
 The extension intentionally blocks Extended or withholds durable verification when required structure no longer matches. Updates to ChatGPT may require maintenance.

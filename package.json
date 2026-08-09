@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-pro-effort-selector",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "type": "module",
   "description": "Dependency-free validation for the ChatGPT Pro Effort Selector Manifest V3 extension.",
@@ -8,7 +8,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "check": "node --check background/service-worker.mjs && node --check content/content-script.js && node --check core/mode-core.js && node --check core/request-core.mjs && node --check core/verification-core.mjs && node --check core/state-core.mjs",
+    "check": "node --check background/service-worker.mjs && node --check content/shadow-ui.js && node --check content/content-script.js && node --check core/mode-core.js && node --check core/request-core.mjs && node --check core/verification-core.mjs && node --check core/state-core.mjs",
     "test": "node --test",
     "validate": "npm run check && npm test"
   }

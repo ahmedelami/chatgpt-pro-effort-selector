@@ -35,8 +35,21 @@
     decideSubmissionForMode
   } = globalThis.ProEffortModeCore;
 
+  const {
+    TRIGGER_SHADOW_STYLES,
+    POPOVER_SHADOW_STYLES,
+    TRIGGER_HOST_STYLES,
+    POPOVER_HOST_STYLES,
+    applyImportantStyles,
+    adoptShadowStyles,
+    eventOccursWithin,
+    getDeepActiveElement
+  } = globalThis.ProEffortShadowUi;
+
   const ROOT_ATTRIBUTE =
     "data-pro-effort-selector-root";
+  const POPOVER_HOST_ATTRIBUTE =
+    "data-pro-effort-selector-popover-host";
   const TOAST_ATTRIBUTE =
     "data-pro-effort-selector-toast";
   const POPOVER_ID =
@@ -124,9 +137,13 @@
     new Set();
 
   let root = null;
+  let rootShadow = null;
   let trigger = null;
+  let triggerLabel = null;
   let politeLiveRegion = null;
   let alertLiveRegion = null;
+  let popoverHost = null;
+  let popoverShadow = null;
   let popover = null;
   let rootMountParent = null;
   let rootMountReference = null;
@@ -617,19 +634,23 @@
 
     target.style.setProperty(
       "--pe-native-font-family",
-      style.fontFamily || "inherit"
+      style.fontFamily || "inherit",
+      "important"
     );
     target.style.setProperty(
       "--pe-native-font-size",
-      style.fontSize || "14px"
+      style.fontSize || "14px",
+      "important"
     );
     target.style.setProperty(
       "--pe-native-font-weight",
-      style.fontWeight || "500"
+      style.fontWeight || "500",
+      "important"
     );
     target.style.setProperty(
       "--pe-native-foreground",
-      style.color || "CanvasText"
+      style.color || "CanvasText",
+      "important"
     );
     target.style.setProperty(
       "--pe-native-control-background",
@@ -638,19 +659,33 @@
         style.backgroundColor !==
           "rgba(0, 0, 0, 0)"
         ? style.backgroundColor
-        : "transparent"
+        : "transparent",
+      "important"
     );
     target.style.setProperty(
       "--pe-native-surface",
-      findOpaqueBackground(anchor)
+      findOpaqueBackground(anchor),
+      "important"
     );
     target.style.setProperty(
       "--pe-native-border-color",
-      borderColor
+      borderColor,
+      "important"
     );
     target.style.setProperty(
       "--pe-native-control-radius",
-      controlRadius
+      controlRadius,
+      "important"
+    );
+    target.style.setProperty(
+      "--pe-native-direction",
+      style.direction || "ltr",
+      "important"
+    );
+    target.style.setProperty(
+      "--pe-native-color-scheme",
+      style.colorScheme || "normal",
+      "important"
     );
   }
 
@@ -659,6 +694,14 @@
       `[${ROOT_ATTRIBUTE}]`
     )) {
       if (candidate !== root) {
+        candidate.remove();
+      }
+    }
+
+    for (const candidate of document.querySelectorAll(
+      `[${POPOVER_HOST_ATTRIBUTE}]`
+    )) {
+      if (candidate !== popoverHost) {
         candidate.remove();
       }
     }
@@ -794,7 +837,7 @@
     }
 
     const activeElement =
-      document.activeElement;
+      getDeepActiveElement(document);
 
     if (
       activeElement instanceof Node &&
@@ -880,7 +923,7 @@
 
       if (
         epoch !== returnFocusEpoch ||
-        document.activeElement ===
+        getDeepActiveElement(document) ===
           currentFocusTarget
       ) {
         return;
@@ -956,7 +999,7 @@
   }
 
   function closePopover(returnFocus) {
-    if (!popover) {
+    if (!popover && !popoverHost) {
       return;
     }
 
@@ -984,7 +1027,9 @@
       true
     );
 
-    popover.remove();
+    popoverHost?.remove();
+    popoverHost = null;
+    popoverShadow = null;
     popover = null;
 
     previousTrigger?.setAttribute(
@@ -1020,7 +1065,9 @@
     }
 
     root = null;
+    rootShadow = null;
     trigger = null;
+    triggerLabel = null;
     politeLiveRegion = null;
     alertLiveRegion = null;
     rootMountParent = null;
@@ -1037,8 +1084,19 @@
     }
 
     root = document.createElement("span");
-    root.className = "pe-root";
     root.setAttribute(ROOT_ATTRIBUTE, "");
+    applyImportantStyles(
+      root,
+      TRIGGER_HOST_STYLES
+    );
+
+    rootShadow = root.attachShadow({
+      mode: "open"
+    });
+    adoptShadowStyles(
+      rootShadow,
+      TRIGGER_SHADOW_STYLES
+    );
 
     trigger = document.createElement("button");
     trigger.type = "button";
@@ -1051,9 +1109,68 @@
       "aria-expanded",
       "false"
     );
-    trigger.setAttribute(
-      "aria-controls",
-      POPOVER_ID
+
+    triggerLabel =
+      document.createElement("span");
+    triggerLabel.className =
+      "pe-trigger-label";
+
+    const triggerChevron =
+      document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "svg"
+      );
+    triggerChevron.classList.add(
+      "pe-trigger-chevron"
+    );
+    triggerChevron.setAttribute(
+      "viewBox",
+      "0 0 10 10"
+    );
+    triggerChevron.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+    triggerChevron.setAttribute(
+      "focusable",
+      "false"
+    );
+
+    const triggerChevronPath =
+      document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path"
+      );
+    triggerChevronPath.setAttribute(
+      "d",
+      "M2 3.5 5 6.5 8 3.5"
+    );
+    triggerChevronPath.setAttribute(
+      "fill",
+      "none"
+    );
+    triggerChevronPath.setAttribute(
+      "stroke",
+      "currentColor"
+    );
+    triggerChevronPath.setAttribute(
+      "stroke-width",
+      "1.5"
+    );
+    triggerChevronPath.setAttribute(
+      "stroke-linecap",
+      "round"
+    );
+    triggerChevronPath.setAttribute(
+      "stroke-linejoin",
+      "round"
+    );
+    triggerChevron.append(
+      triggerChevronPath
+    );
+    trigger.append(
+      triggerLabel,
+      triggerChevron
     );
 
     politeLiveRegion =
@@ -1090,7 +1207,7 @@
       }
     });
 
-    root.append(
+    rootShadow.append(
       trigger,
       politeLiveRegion,
       alertLiveRegion
@@ -1099,12 +1216,13 @@
     rootMountParent = mount.parent;
     rootMountReference = mount.reference;
 
+    applyNativeTokens(root, anchor);
+
     rootMountReference.insertAdjacentElement(
       "afterend",
       root
     );
 
-    applyNativeTokens(root, anchor);
     renderUi();
 
     /*
@@ -1232,7 +1350,7 @@
   }
 
   function renderTrigger() {
-    if (!trigger) {
+    if (!trigger || !triggerLabel) {
       return;
     }
 
@@ -1243,7 +1361,8 @@
         ? "Extended"
         : "Standard";
 
-    trigger.textContent = preferenceLabel;
+    triggerLabel.textContent =
+      preferenceLabel;
     trigger.dataset.preference =
       displayedPreference;
     trigger.setAttribute(
@@ -1380,7 +1499,7 @@
 
     let focusSelector = null;
     const activeElement =
-      document.activeElement;
+      getDeepActiveElement(document);
 
     if (
       activeElement instanceof Element &&
@@ -1455,7 +1574,10 @@
   }
 
   function positionPopover() {
-    if (!popover || !trigger) {
+    if (
+      !popover?.isConnected ||
+      !trigger?.isConnected
+    ) {
       return;
     }
 
@@ -1541,18 +1663,19 @@
   }
 
   function handleOutsidePointer(event) {
-    if (
-      !popover ||
-      !(event.target instanceof Node)
-    ) {
+    if (!popover) {
       return;
     }
 
     cancelOpeningFocusHandoff();
 
     if (
-      popover.contains(event.target) ||
-      root?.contains(event.target)
+      eventOccursWithin(event, [
+        root,
+        trigger,
+        popoverHost,
+        popover
+      ])
     ) {
       return;
     }
@@ -1577,6 +1700,26 @@
 
     cancelReturnFocusHandoff();
 
+    popoverHost =
+      document.createElement("div");
+    popoverHost.setAttribute(
+      POPOVER_HOST_ATTRIBUTE,
+      ""
+    );
+    applyImportantStyles(
+      popoverHost,
+      POPOVER_HOST_STYLES
+    );
+
+    popoverShadow =
+      popoverHost.attachShadow({
+        mode: "open"
+      });
+    adoptShadowStyles(
+      popoverShadow,
+      POPOVER_SHADOW_STYLES
+    );
+
     popover = document.createElement("div");
     popoverRenderSignature = null;
     popover.id = POPOVER_ID;
@@ -1595,14 +1738,15 @@
       handlePopoverKeydown
     );
 
-    document.body.append(popover);
-
     if (modelControl) {
       applyNativeTokens(
-        popover,
+        popoverHost,
         modelControl
       );
     }
+
+    popoverShadow.append(popover);
+    document.body.append(popoverHost);
 
     trigger.setAttribute(
       "aria-expanded",
@@ -3086,6 +3230,9 @@
     if (
       !root ||
       !root.isConnected ||
+      !rootShadow ||
+      root.shadowRoot !== rootShadow ||
+      !trigger?.isConnected ||
       rootMountParent !== mount.parent ||
       rootMountReference !==
         mount.reference ||
@@ -3097,11 +3244,24 @@
       return;
     }
 
+    if (
+      popover &&
+      (
+        !popoverHost?.isConnected ||
+        !popoverShadow ||
+        popoverHost.shadowRoot !==
+          popoverShadow ||
+        !popover.isConnected
+      )
+    ) {
+      closePopover(false);
+    }
+
     applyNativeTokens(root, modelControl);
 
-    if (popover) {
+    if (popover && popoverHost) {
       applyNativeTokens(
-        popover,
+        popoverHost,
         modelControl
       );
       positionPopover();
