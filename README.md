@@ -18,7 +18,7 @@ Work autonomously until it is installed and visibly verified in Google Chrome.
    - If this same clone is already loaded, click Reload.
    - If a copy from another directory or multiple copies exist, stop and ask me. Do not remove anything or load a duplicate.
    - Otherwise, click Load unpacked and choose the clone directory containing `manifest.json`.
-6. Installing unpacked software may require my confirmation at action time under your Computer Use policy. If so, explain the debugger-permission risk and ask immediately before clicking Load unpacked or accepting the related Chrome prompt.
+6. If this is a first-time Load unpacked install, wait until immediately before clicking Load unpacked, then explain the debugger-permission risk and ask for the single action-time confirmation required by Computer Use. Batch that one confirmation to cover clicking Load unpacked, choosing exactly the verified `~/chatgpt-pro-effort-selector` directory containing `manifest.json`, and accepting only Chrome's expected debugger-related warning for this extension. After I confirm, continue autonomously without another confirmation. If the same clone is already loaded and only needs Reload, do not ask for confirmation.
 7. Open or reload `https://chatgpt.com/`. Without sending a message, select the visible Pro model if needed and verify that a compact selector containing exactly Standard and Extended appears beside it.
 8. Confirm Chrome's installed extension version matches `manifest.json`.
 9. Do not send a ChatGPT message unless I explicitly ask for a live request test. If I do request one, keep DevTools and every other debugger-based browser tool detached during the Extended send because the extension needs exclusive temporary debugger access.
