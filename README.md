@@ -1,4 +1,4 @@
-# ChatGPT Pro Effort Selector
+# Index
 
 > [!IMPORTANT]
 > **OpenAI exposed Standard and Extended thinking in GPT-5.5 Pro. GPT-5.6 Pro hides that choice; this extension brings it back.**
