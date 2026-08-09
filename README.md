@@ -1,4 +1,4 @@
-# Index
+# ChatGPT Pro Effort Selector
 
 > [!IMPORTANT]
 > **OpenAI exposed Standard and Extended thinking in GPT-5.5 Pro. GPT-5.6 Pro hides that choice; this extension brings it back.**
@@ -13,6 +13,15 @@
 <p align="center">
   <img src="docs/images/standard-to-extended-thinking-effort.png" alt="Chrome request metadata showing thinking effort changing from standard to extended" width="1200">
 </p>
+
+## Index
+
+- **Get started:** [Codex prompt](#install-copy-text-block-below-and-paste-into-codex-56-sol) · [Manual installation](#manual-installation) · [Project structure](#project-structure)
+- **Behavior:** [Overview](#overview) · [Standard mode](#standard-mode) · [Extended mode](#extended-mode) · [SPA navigation](#spa-navigation-and-route-isolation) · [Duplicate protection](#duplicate-protection)
+- **Safety and recovery:** [Debugger warning](#chrome-debugger-warning) · [DevTools conflict](#devtools-conflict) · [Worker restarts](#service-worker-restart-handling)
+- **Verification and access:** [Redacted audit](#redacted-audit) · [Durable verification](#durable-verification) · [Maintenance](#verification-maintenance) · [Permissions](#permissions) · [Privacy](#privacy)
+- **Testing:** [Automated validation](#automated-validation) · [Manual QA](#manual-qa-checklist)
+- **Reference:** [Known limitations](#known-limitations) · [License](#license)
 
 ## Install: Copy text block below and paste into Codex 5.6 Sol
 
@@ -41,6 +50,8 @@ Work autonomously until it is installed and visibly verified in Google Chrome.
 10. Report the clone path, extension version, validation result, and visible Chrome verification. Leave ChatGPT open and leave the current test chat in Standard mode.
 ```
 
+## Overview
+
 A dependency-free Manifest V3 Chrome extension that exposes a compact **Standard / Extended** selector beside ChatGPT's composer model control only when the currently visible model is exactly **Pro** or **GPT-5.6 Pro**.
 
 For each canonical saved conversation, the selector controls a persistent per-chat mode. While that chat is Extended, every captured normal composer submission freshly uses the existing short-lived one-shot debugger gate. Sending, failing, timing out, warning, or verifying an individual request does not consume or reset the chat mode.
@@ -52,7 +63,7 @@ The selector mounts beside the model-control branch in the nearest horizontal co
 > [!WARNING]
 > This is an unofficial extension that depends on unsupported ChatGPT internals and requests Chrome's powerful `debugger` permission. Review the source before installing it. ChatGPT or Chrome changes can break it without notice.
 
-## Directory
+## Project structure
 
 The unpacked-extension directory is the cloned repository root:
 
@@ -94,7 +105,7 @@ chatgpt-pro-effort-selector/
 
 No build step, package installation, remote code, or third-party runtime dependency is used.
 
-## Standard behavior
+## Standard mode
 
 Standard is the default mode for every canonical saved conversation whose stored mode is missing, deleted, malformed, or otherwise unexpected.
 
@@ -140,7 +151,7 @@ A blank new chat has no canonical conversation UUID, so its mode is kept in that
 - a later blank new chat defaults to Standard
 - a fresh tab has its own Standard draft default, and closing the original tab clears its unsent draft mode with the browser session
 
-## Per-chat Extended mode and per-send one-shot gate
+## Extended mode
 
 Extended applies to a captured composer submission only when:
 
@@ -406,7 +417,7 @@ Distinguishes an exact same-document ChatGPT History API route update from a top
 
 No remote script is loaded.
 
-## Load unpacked
+## Manual installation
 
 1. Clone the repository into a stable local folder:
 
@@ -599,7 +610,7 @@ Run this five-send sequence in one canonical chat, using a unique marker for eve
 10. In a controlled harness, or manually when the timing is reproducible, submit a Standard first message and select Extended before ChatGPT assigns the canonical route.
 11. Confirm that first marked request remained backend Standard, reload and confirm the created chat is Extended, then send a second marker and confirm backend Extended.
 
-### Legacy migration
+### Legacy migration QA
 
 1. Before loading the revised extension, create the old local-storage value `effortPreference = "extended"`.
 2. Load or reload the revised extension.
@@ -690,14 +701,14 @@ Run this five-send sequence in one canonical chat, using a unique marker for eve
 4. Confirm each canonical conversation's persistent mode remains.
 5. Confirm the page can recover to a new Ready state after reload.
 
-### Durable verification
+### Durable verification QA
 
 1. Run `npm test`.
 2. Confirm the proof classifier accepts only matching model, effort, completion status, and `end_turn`.
 3. Confirm mismatched, incomplete, ambiguous, stale-branch, and cyclic mappings fail.
 4. Confirm no verification state adds visible content to the two-option picker.
 
-## Threat and privacy note
+## Privacy
 
 The debugger permission is powerful. A conversation may remain persistently Extended, but the debugger is not persistently attached. The extension attaches only for one fresh captured composer submission at a time in the exact ChatGPT tab, then detaches as quickly as the one-shot lifecycle permits.
 
@@ -707,7 +718,7 @@ Durable verification parses the internal conversation response in page context. 
 
 There is no telemetry, remote code, dynamic code evaluation, `eval`, or `new Function`.
 
-## Known brittleness
+## Known limitations
 
 This extension depends on unsupported ChatGPT internals:
 
