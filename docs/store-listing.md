@@ -87,6 +87,7 @@ Verify that every URL is publicly reachable before submission. Use only original
 - **Package icon:** `icons/icon-128.png`
 - **Small promotional tile:** `store/assets/small-promo-440x280.png`
 - **Primary product screenshot:** `store/assets/screenshot-selector-640x400.png`
+
 The icon and promotional tile use the original monochrome two-bar effort mark. Editable SVG sources are kept beside the store assets and are not included in the runtime ZIP.
 
 ## Private reviewer test instructions
