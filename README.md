@@ -6,7 +6,7 @@
   <img src="docs/images/pro-effort-selector.png" alt="Standard and Extended effort selector beside ChatGPT Pro" width="636">
 </p>
 
-### Extended changes the request from `thinking_effort: "standard"` → `"extended"`
+### Verify it yourself after installing the extension
 
 <p align="center">
   <img src="docs/images/standard-to-extended-thinking-effort.png" alt="Chrome request metadata showing thinking effort changing from standard to extended" width="1200">
