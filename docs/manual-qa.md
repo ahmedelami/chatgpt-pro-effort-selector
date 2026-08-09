@@ -20,7 +20,7 @@ Use a unique marker in every test prompt. When checking backend metadata, keep D
 2. Test in dark mode.
 3. Confirm Pro and the effort selector remain in one horizontal composer-control row.
 4. Confirm the selector never stacks underneath Pro or overlaps the mic, voice, or send controls.
-5. Confirm the closed selector clearly shows Sta or Ext with a compact menu chevron.
+5. Confirm the closed selector clearly shows `Sta..` or `Ext..` with a compact menu chevron.
 6. Confirm the selector is a borderless 36 px composer control that is transparent at rest, uses the nearby model control's font and foreground tokens where available, and shows a restrained background only while hovered.
 7. Confirm the open picker is approximately 152 px wide with a 16 px radius and exactly two 36 px single-line choice rows: Standard and Extended.
 8. Confirm selection is communicated by the right-side checkmark, with no persistent selected-row fill and only a restrained hover surface.

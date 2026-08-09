@@ -174,7 +174,7 @@ test("uses explicit stable geometry for the broken visual surfaces", () => {
   );
   assert.match(
     contentScript,
-    /const compactPreferenceLabel =\s*preferenceLabel\.slice\(0, 3\);[\s\S]*?triggerLabel\.textContent =\s*compactPreferenceLabel;/
+    /const compactPreferenceLabel =\s*`\$\{preferenceLabel\.slice\(0, 3\)\}\.\.`;[\s\S]*?triggerLabel\.textContent =\s*compactPreferenceLabel;/
   );
   assert.match(
     contentScript,

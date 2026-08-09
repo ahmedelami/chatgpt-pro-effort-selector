@@ -1361,7 +1361,7 @@
         ? "Extended"
         : "Standard";
     const compactPreferenceLabel =
-      preferenceLabel.slice(0, 3);
+      `${preferenceLabel.slice(0, 3)}..`;
 
     triggerLabel.textContent =
       compactPreferenceLabel;
