@@ -174,7 +174,15 @@ test("uses explicit stable geometry for the broken visual surfaces", () => {
   );
   assert.match(
     contentScript,
-    /triggerLabel\.textContent =\s*preferenceLabel;/
+    /const compactPreferenceLabel =\s*preferenceLabel\.slice\(0, 3\);[\s\S]*?triggerLabel\.textContent =\s*compactPreferenceLabel;/
+  );
+  assert.match(
+    contentScript,
+    /`Pro effort: \$\{preferenceLabel\}`/
+  );
+  assert.match(
+    contentScript,
+    /createRadioOption\(\s*STANDARD,\s*"Standard"\s*\)[\s\S]*?createRadioOption\(\s*EXTENDED,\s*"Extended"\s*\)/
   );
   assert.doesNotMatch(
     contentScript,
@@ -187,6 +195,42 @@ test("uses explicit stable geometry for the broken visual surfaces", () => {
   assert.match(
     shadowUi,
     /\.pe-option:hover:not\([^}]*\) \{\s*background: var\(--pe-hover\);\s*\}/
+  );
+  assert.match(
+    shadowUi,
+    /\.pe-trigger \{[^}]*background: transparent;/
+  );
+  assert.match(
+    shadowUi,
+    /\.pe-trigger:hover \{[^}]*background: color-mix\([^}]*var\(--pe-foreground\) 10%,[^}]*transparent/
+  );
+  assert.doesNotMatch(
+    shadowUi,
+    /--pe-control-background/
+  );
+  assert.doesNotMatch(
+    shadowUi,
+    /\.pe-trigger:focus-visible \{[^}]*background:/
+  );
+  assert.doesNotMatch(
+    shadowUi,
+    /\.pe-option\[aria-checked="true"\]\s*\{[^}]*background:/
+  );
+  assert.match(
+    shadowUi,
+    /\.pe-trigger-label \{[^}]*flex: 0 0 auto;[^}]*overflow: visible;/
+  );
+  assert.doesNotMatch(
+    shadowUi,
+    /\.pe-trigger-label \{[^}]*(?:overflow:\s*hidden|text-overflow:\s*ellipsis)/
+  );
+  assert.match(
+    shadowUi,
+    /\.pe-option \{[^}]*background: transparent;/
+  );
+  assert.doesNotMatch(
+    shadowUi,
+    /\.pe-option:focus(?:-visible)? \{[^}]*background:/
   );
   assert.match(
     shadowUi,

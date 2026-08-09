@@ -13,10 +13,6 @@
         --pe-native-foreground,
         CanvasText
       );
-      --pe-control-background: var(
-        --pe-native-control-background,
-        transparent
-      );
       direction: var(
         --pe-native-direction,
         ltr
@@ -53,11 +49,7 @@
       padding: 6px 10px;
       border: 0;
       border-radius: 999px;
-      background: color-mix(
-        in srgb,
-        var(--pe-control-background) 94%,
-        var(--pe-foreground) 6%
-      );
+      background: transparent;
       color: var(--pe-foreground);
       font-family: var(--pe-font-family);
       font-size: 16px;
@@ -81,8 +73,8 @@
     .pe-trigger:hover {
       background: color-mix(
         in srgb,
-        var(--pe-control-background) 90%,
-        var(--pe-foreground) 10%
+        var(--pe-foreground) 10%,
+        transparent
       );
     }
 
@@ -93,9 +85,10 @@
 
     .pe-trigger-label {
       display: block;
+      flex: 0 0 auto;
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      overflow: visible;
+      text-overflow: clip;
       white-space: nowrap;
     }
 

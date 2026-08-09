@@ -1360,9 +1360,11 @@
       displayedPreference === EXTENDED
         ? "Extended"
         : "Standard";
+    const compactPreferenceLabel =
+      preferenceLabel.slice(0, 3);
 
     triggerLabel.textContent =
-      preferenceLabel;
+      compactPreferenceLabel;
     trigger.dataset.preference =
       displayedPreference;
     trigger.setAttribute(
