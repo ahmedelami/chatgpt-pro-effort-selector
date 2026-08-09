@@ -4,7 +4,7 @@
 > **OpenAI exposed Standard and Extended thinking in GPT-5.5 Pro. GPT-5.6 Pro hides that choice; this extension brings it back.**
 
 <p align="center">
-  <img src="docs/images/pro-effort-selector.png" alt="Standard and Extended effort selector beside ChatGPT Pro" width="636">
+  <img src="docs/images/pro-effort-selector.png" alt="Standard and Extended effort selector beside ChatGPT Pro" width="318">
 </p>
 
 > [!TIP]
