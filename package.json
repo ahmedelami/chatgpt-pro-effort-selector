@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Dependency-free validation for the ChatGPT Pro Effort Selector Manifest V3 extension.",
+  "license": "MIT",
   "engines": {
     "node": ">=18"
   },

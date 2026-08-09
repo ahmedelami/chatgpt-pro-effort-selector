@@ -66,6 +66,7 @@ The complete layout is:
 
 ```text
 chatgpt-pro-effort-selector/
+├── LICENSE
 ├── manifest.json
 ├── package.json
 ├── README.md
@@ -727,3 +728,7 @@ ChatGPT can change any of these without notice.
 The trigger and picker use separate open Shadow DOM roots with extension-owned styles, so ordinary ChatGPT CSS changes cannot restyle their internal buttons, chevron, rows, or hover surface. The light-DOM toast remains outside that isolation. Shadow DOM is not a security boundary and does not protect the surrounding composer layout, model-control discovery, or mount-point selection from future ChatGPT DOM changes.
 
 The extension intentionally blocks Extended or withholds durable verification when required structure no longer matches. Updates to ChatGPT may require maintenance.
+
+## License
+
+[MIT](LICENSE)
